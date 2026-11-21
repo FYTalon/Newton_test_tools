@@ -6,39 +6,30 @@
 
 SiMonitor 的示例先构造场景，再在步进循环中使用 `Monitor`。这里也可直接用引擎已有的场景对象。性能接入需要步进和设备同步，精度还需要读取初态与帧末状态、接触对。通常可以复用同一引擎的读数函数，只为各场景指定入口、参数和必要的标识映射。 [SiMonitor 接入说明](https://github.com/Nodevon-WS/SiMonitor#接入仿真)
 
-下面的 `load_scene`、`read_runtime`、`read_initial` 和 `read_frame` 由接入端实现。场景通过 `load_scene` 上下文加载和释放。`read_initial` 返回 `model`、`shapes`、`initial_state` 和 `velocity_convention`，`read_frame` 返回 `(bodies, contact_pairs)`。模型、状态和接触的字段见下文。
+可以直接用公用模板作为 Python 入口。先在候选引擎的 Python 环境中安装本工具，再把 `--scene-module` 指向自己的场景模块。[独立适配器模板](../adapters/example/run.py)
 
-```python
-from newton_test_tools import Monitor, MonitorConfig, read_request
-
-request = read_request(request_path)
-config = MonitorConfig(engine="ExampleEngine", gpu_devices=tuple(request["gpu_devices"]))
-case, settings = request["case"], request["protocol"]
-reference_ids = request.get("reference_identity")
-
-with load_scene(request) as scene:
-    accuracy = request["mode"] == "accuracy"
-    with Monitor(
-        output,
-        config,
-        request=request,
-        runtime=read_runtime(scene),
-        synchronize=scene.synchronize,
-        observe=(lambda: read_frame(scene, reference_ids)) if accuracy else None,
-    ) as monitor:
-        if accuracy:
-            scene.synchronize()
-            monitor.start(**read_initial(scene, reference_ids))
-            for _ in range(settings["num_frames"]):
-                with monitor.step(case["frame_dt_seconds"]):
-                    scene.step()
-        else:
-            monitor.measure(scene.step)
+```sh
+ENGINE_PY=/path/to/engine/.venv/bin/python
+uv pip install --python "$ENGINE_PY" .
+export CANDIDATE_ADAPTER="$ENGINE_PY $PWD/adapters/example/run.py --scene-module your_engine.benchmark_scenes"
 ```
+
+自己的模块实现 `create_scene(case, *, device, graph, deterministic, reference_identity)`。函数根据 `case["id"]` 选已有 example，在构造求解器前传入两个开关，并返回可关闭的场景上下文。用引擎自己的设备选择逻辑把 NVML 索引或 UUID 映射到仿真设备。模块需要能由候选环境导入。
+
+| 场景接口 | 实现要求 |
+| --- | --- |
+| `frame_dt` | 实际完整帧时间，单位为秒。 |
+| `step()` | 推进完整一帧及其所有物理子步。 |
+| `synchronize()` | 等待当次仿真提交在 GPU 上完成。 |
+| `runtime()` | 返回下文所列的实际设备、场景规模及运行模式。 |
+| `read_initial()` | 精度模式下返回 `model`、`shapes`、`initial_state` 与 `velocity_convention`。 |
+| `observe()` | 精度模式下返回当前帧的 `(bodies, contact_pairs)`，使用 Newton 的参考标识。 |
+
+`adapters/example/run.py` 先创建场景，再把上述接口交给 `Monitor`。精度路径先提交第 0 帧，再执行 `with monitor.step(scene.frame_dt): scene.step()`。性能路径调用 `monitor.measure(scene.step)`，该路径只使用仿真步进和设备同步。
 
 `Monitor` 在精度步进结束后调用同步与读数回调，在性能模式负责预热和计时。若已有采集循环，可调用 `advance(dt_s=..., state=..., contact_pairs=...)` 提交同步后的数据，或用 `record_sim_time(t)` 按仿真时钟采样。性能的 `first_warmup_step` 可用于核验 graph，已有同口径计时循环也可用 `record_performance(timed_frames, elapsed_seconds)` 提交原始计数。
 
-公用运行器负责启动两端、重复试验、采样显存、比较结果和复核。在 Python 中可用上面的 `Monitor` 生成输出文件，其他语言可以直接按下文的 JSON 协议生成文件。
+公用运行器负责启动两端、重复试验、采样显存、比较结果和复核。其他语言可用自己的可执行入口，直接按下文的 JSON 协议生成文件。
 
 ## 运行入口
 
