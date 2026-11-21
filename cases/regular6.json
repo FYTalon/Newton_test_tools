@@ -1,0 +1,119 @@
+{
+  "format": "sim-bench-suite-v1",
+  "protocol": {
+    "accuracy": {
+      "num_frames": 500,
+      "repetitions": 2,
+      "deterministic": true,
+      "graph": false,
+      "contact_stage": "end_of_frame"
+    },
+    "performance": {
+      "duration_seconds": 600,
+      "repetitions": 3,
+      "warmup_frames": 5,
+      "sync_interval_frames": 5,
+      "deterministic": false,
+      "graph": true,
+      "memory_sample_interval_ms": 10
+    }
+  },
+  "cases": [
+    {
+      "id": "basic_shapes",
+      "solver": "xpbd",
+      "collision": "external",
+      "world_count": 1,
+      "frame_dt_seconds": 0.01,
+      "substeps": 5,
+      "normalization_floor": {
+        "force_N": 25,
+        "torque_com_Nm": 6.25,
+        "position_m": 0.01,
+        "linear_velocity_mps": 0.01,
+        "angular_velocity_radps": 0.01,
+        "basis": "Rounded 1% of the lightest dynamic body weight (254.47 kg at 9.81 m/s^2); torque uses a 0.25 m scene lever arm."
+      }
+    },
+    {
+      "id": "basic_conveyor",
+      "solver": "xpbd",
+      "collision": "external",
+      "world_count": 1,
+      "frame_dt_seconds": 0.01,
+      "substeps": 10,
+      "normalization_floor": {
+        "force_N": 0.85,
+        "torque_com_Nm": 0.17,
+        "position_m": 0.01,
+        "linear_velocity_mps": 0.01,
+        "angular_velocity_radps": 0.01,
+        "basis": "Rounded 1% of the lightest dynamic body weight (8.57528 kg at 9.81 m/s^2); torque uses a 0.2 m scene lever arm."
+      }
+    },
+    {
+      "id": "nut_bolt_hydro",
+      "solver": "xpbd",
+      "collision": "external",
+      "world_count": 20,
+      "frame_dt_seconds": 0.008333333333333333,
+      "substeps": 4,
+      "normalization_floor": {
+        "force_N": 0.02,
+        "torque_com_Nm": 0.001,
+        "position_m": 0.01,
+        "linear_velocity_mps": 0.01,
+        "angular_velocity_radps": 0.01,
+        "basis": "About 1% of the bolt weight and a 5 cm lever-arm scale."
+      }
+    },
+    {
+      "id": "basic_pendulum",
+      "solver": "xpbd",
+      "collision": "external",
+      "world_count": 1,
+      "frame_dt_seconds": 0.01,
+      "substeps": 10,
+      "normalization_floor": {
+        "force_N": 8,
+        "torque_com_Nm": 8,
+        "position_m": 0.01,
+        "linear_velocity_mps": 0.01,
+        "angular_velocity_radps": 0.01,
+        "basis": "Rounded 1% of the lightest dynamic body weight (80 kg at 9.81 m/s^2); torque uses a 1 m lever arm."
+      }
+    },
+    {
+      "id": "robot_g1",
+      "solver": "mujoco",
+      "collision": "external",
+      "world_count": 4,
+      "frame_dt_seconds": 0.016666666666666666,
+      "substeps": 6,
+      "normalization_floor": {
+        "force_N": 0.1,
+        "torque_com_Nm": 0.01,
+        "position_m": 0.01,
+        "linear_velocity_mps": 0.01,
+        "angular_velocity_radps": 0.01,
+        "basis": "Rounded 1% of a 1 kg reference weight at 9.81 m/s^2; torque uses a 0.1 m lever arm. Fixed scene scale floor; Newton per-body trajectory peaks dominate where larger."
+      }
+    },
+    {
+      "id": "robot_anymal_c_walk",
+      "solver": "mujoco",
+      "collision": "external",
+      "world_count": 1,
+      "frame_dt_seconds": 0.02,
+      "substeps": 4,
+      "normalization_floor": {
+        "force_N": 0.1,
+        "torque_com_Nm": 0.01,
+        "position_m": 0.01,
+        "linear_velocity_mps": 0.01,
+        "angular_velocity_radps": 0.01,
+        "basis": "Rounded 1% of a 1 kg reference weight at 9.81 m/s^2; torque uses a 0.1 m lever arm. Fixed scene scale floor; Newton per-body trajectory peaks dominate where larger."
+      }
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+diff --git a/newton/_src/geometry/contact_data.py b/newton/_src/geometry/contact_data.py
+index 7f7a82699..7a39136a9 100644
+--- a/newton/_src/geometry/contact_data.py
++++ b/newton/_src/geometry/contact_data.py
+@@ -114,9 +114,9 @@ def make_contact_sort_key(shape_a: int, shape_b: int, sort_sub_key: int, shape_i
+       for ``edge_idx`` (~2M edges).  After multi-contact expansion
+       (``<< 3``), 18 effective bits (~262K edges).
+     - Hydroelastic contacts: ``((voxel_idx * 5 + face_idx) << 1) | source``,
+-      with bit 0 distinguishing normal-bin and voxel-bin winners and bit 22
+-      reserved for reduction anchors — 21 effective fingerprint bits (~419K
+-      iso voxels).
++      with bit 0 distinguishing normal-bin and voxel-bin winners and the last
++      256 sub-key values reserved for reduction anchors — up to 838,835 iso
++      voxels.
+     """
+     return make_contact_sort_key_with_bits(
+         shape_a,
+diff --git a/newton/_src/geometry/contact_reduction_hydroelastic.py b/newton/_src/geometry/contact_reduction_hydroelastic.py
+index e9ad3cdd4..1523169ee 100644
+--- a/newton/_src/geometry/contact_reduction_hydroelastic.py
++++ b/newton/_src/geometry/contact_reduction_hydroelastic.py
+@@ -1448,7 +1448,7 @@ def create_export_hydroelastic_reduced_contacts_kernel(
+                 contact_data.contact_stiffness = shared_stiffness
+                 contact_data.contact_friction_scale = wp.float32(anchor_friction_scale)
+                 bin_id = int((ht_keys[entry_idx] >> wp.uint64(55)) & wp.uint64(0xFF))
+-                contact_data.sort_sub_key = 0x400000 | bin_id
++                contact_data.sort_sub_key = 0x7FFF00 | bin_id
+
+                 # Call the writer function for anchor
+                 writer_func(contact_data, writer_data, -1)
+diff --git a/newton/_src/geometry/sdf_hydroelastic.py b/newton/_src/geometry/sdf_hydroelastic.py
+index 4956b1c1a..4860af8ce 100644
+--- a/newton/_src/geometry/sdf_hydroelastic.py
++++ b/newton/_src/geometry/sdf_hydroelastic.py
+@@ -103,10 +103,11 @@ def _hydro_rsqrt_approx(value: float) -> float:
+     ...
+
+
+-# Contact sort sub-keys reserve bit 22 for hydroelastic anchor contacts and bit
+-# 0 for the normal/voxel reduction source. Face fingerprints are shifted left
+-# by one during export, so they must stay below bit 21.
+-_MAX_FACE_FINGERPRINT = 0x200000
++# Contact sort sub-keys have 23 bits. Reserve the last 256 values for the
++# hydroelastic anchors and bit 0 for the normal/voxel reduction source.
++# Face fingerprints are shifted left by one during export; the remaining
++# range also fits the 22-bit deterministic reduction fingerprint.
++_MAX_FACE_FINGERPRINT = 0x3FFF80
+ _MAX_DETERMINISTIC_ISO_VOXELS = _MAX_FACE_FINGERPRINT // MAX_MC_FACES_PER_VOXEL
+
+ # Empirical per-level bounds relative to the narrow-band subgrids of the SDF

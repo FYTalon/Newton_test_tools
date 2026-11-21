@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "newton-test-tools"
+version = "0.1.0"
+description = "Common accuracy and performance benchmarks for simulation engines"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "nvidia-ml-py>=12"]
+
+[project.scripts]
+newton-test = "newton_test_tools.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/newton_test_tools"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
