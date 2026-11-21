@@ -2,7 +2,7 @@
 
 ## 1. 工具说明
 
-`newton-test` 通过命令行适配器运行参考引擎和参评引擎。适配器用各自已有的 example 构建场景、推进仿真并导出数据。公用工具负责启动两端、计算误差、汇总 FPS 和峰值显存，以及复核保存的结果。两端可以使用各自的运行环境和编程语言。
+`newton-test` 统一运行参考引擎和参评引擎。Python 适配器用已有 example 初始化场景，并提供步进、同步和读数接口。公用工具加载适配器、执行精度和性能流程、计算误差、汇总 FPS 和峰值显存，以及复核保存的结果。两端可以使用各自的运行环境和编程语言。
 
 当前评测覆盖以下六个刚体与铰链体场景。求解器、帧时间、子步数和归一化尺度见[六例清单](cases/regular6.json)。
 
@@ -40,7 +40,7 @@ uv pip install --python .venv/bin/python \
 先用 Newton 对 Newton 跑一次 `basic_shapes`。首次运行会按 Newton example 的配置获取资产。
 
 ```sh
-NEWTON_ADAPTER=".venv/bin/python adapters/newton/run.py"
+NEWTON_ADAPTER=".venv/bin/python -m newton_test_tools worker --adapter adapters/newton/adapter.py"
 
 uv run --no-sync newton-test run --suite cases/regular6.json --case basic_shapes \
   --reference "$NEWTON_ADAPTER" --candidate "$NEWTON_ADAPTER" \
@@ -55,42 +55,36 @@ uv run --no-sync newton-test verify runs/newton-smoke
 
 ## 3. 写适配器（adapter）
 
-参评双方都应公开实际用于测试的适配器源码、场景运行参数和标识映射，便于按同一套实现复验。每个引擎的适配器放在 `adapters/<引擎名>/`。本库已提供 Newton 参考端和 WanPhys 参评端的完整适配器。[Newton 适配器](adapters/newton/run.py) · [WanPhys 适配器](adapters/wanphys/run.py) · [WanPhys 场景配置](adapters/wanphys/scenes.json)
+参评双方都应公开实际用于测试的适配器源码、场景运行参数和标识映射，便于按同一套实现复验。每个引擎的适配器放在 `adapters/<引擎名>/`。本库已提供 Newton 参考端和 WanPhys 参评端的完整适配器。[Newton 适配器](adapters/newton/adapter.py) · [WanPhys 适配器](adapters/wanphys/adapter.py) · [WanPhys 场景配置](adapters/wanphys/scenes.json)
 
-每次试验由公用工具启动一个适配器进程，并追加 `--request` 和 `--output`。
-
-```sh
-your-adapter --request /path/to/request.json --output /path/to/run
-```
+Python 适配器实现 `prepare_trial(request, *, output)`，进入上下文时初始化场景并交出一个 `Trial`，退出时释放资源。可复制模板并接入自己的场景工厂。工具的 `worker` 读取请求、导入适配器并运行 `Trial`。[Python 适配器模板](adapters/example/adapter.py)
 
 用请求里的 `case.id` 选择已有 example，按 `case` 读取求解器和物理配置。在构造场景前应用 `protocol.deterministic` 和 `protocol.graph`，并按 `gpu_devices` 选择设备。精度模式下，用 `reference_identity` 将本地刚体和形状编号映射到 Newton 的 `(world, name)` 标识。
 
-Python 可以直接复用仓库里的入口，配套提供一个能导入的模块，如 `your_engine.benchmark_scenes`。模块实现 `create_scene(case, *, device, graph, deterministic, reference_identity)`，返回一个在进入时构造场景、退出时释放资源的上下文管理器。场景提供以下接口。[Python 适配器模板](adapters/example/run.py)
-
-| 场景接口 | 提供的能力 |
+| `Trial` 字段 | 提供的能力 |
 | --- | --- |
+| `engine`、`runtime` | 引擎显示名，以及实际帧间隔、设备 UUID、求解器、场景规模和两个开关。 |
 | `step()` | 推进完整一帧及全部物理子步。 |
 | `synchronize()` | 等待 GPU 完成仿真。 |
-| `runtime()` | 报告实际帧间隔、设备 UUID、求解器、场景规模和两个开关。 |
 | `read_initial()` | 精度模式下提供模型、形状表、第 0 帧状态和速度约定。 |
 | `observe()` | 精度模式下返回帧末的 `(bodies, contact_pairs)`。 |
 
-Python 适配器把上述接口交给工具的 `run_trial()`。精度由工具记录第 0 帧，再逐帧采集刚体状态和有效形状对。性能由工具预热、计时和生成报告，计时段调用步进和同步。其他语言可直接写 `report.json` 和精度模式所需的 `trajectory.json`。模型、接触、计时及输出字段见[适配器协议](docs/adapter.md)。
+精度由工具记录第 0 帧，再逐帧采集刚体状态和有效形状对。性能由工具预热、计时和生成报告，计时段调用步进和同步。其他语言可提供自己的可执行入口，接收 `--request` 和 `--output`，按协议写 `report.json` 和精度模式的 `trajectory.json`。模型、接触、计时及输出字段见[适配器协议](docs/adapter.md)。
 
 ## 4. 接入自己的引擎测试
 
-在本工具根目录把候选命令指向自己的引擎。使用 Python 模板时，将下面的 Python 路径和模块名换成自己的，模块须能从该环境导入。
+在本工具根目录把候选命令指向自己的引擎。将下面的 Python 路径和适配器模块名换成自己的。模块须能从该环境导入，`--adapter` 也接受 Python 文件路径。
 
 ```sh
 ENGINE_PY=/path/to/engine/.venv/bin/python
 uv pip install --python "$ENGINE_PY" -e .
-CANDIDATE_ADAPTER="'$ENGINE_PY' '$PWD/adapters/example/run.py' --scene-module your_engine.benchmark_scenes"
-NEWTON_ADAPTER=".venv/bin/python adapters/newton/run.py"
+CANDIDATE_ADAPTER="'$ENGINE_PY' -m newton_test_tools worker --adapter your_engine.benchmark_adapter"
+NEWTON_ADAPTER=".venv/bin/python -m newton_test_tools worker --adapter adapters/newton/adapter.py"
 ```
 
 已有独立入口时，可将 `CANDIDATE_ADAPTER` 设为其完整命令，例如 `/path/to/engine/bin/benchmark_adapter`。运行器会追加本次试验的请求和输出参数。先用 `basic_shapes` 跑 100 帧短测，检查首次接触后的形状对映射，再跑正式六例。
 
-以 WanPhys 作为参评端时，将 `CANDIDATE_ADAPTER` 指向公开的 `adapters/wanphys/run.py`，用已安装 WanPhys 的 Python 环境运行。[WanPhys 运行说明](adapters/wanphys/README.md)
+以 WanPhys 作为参评端时，用已安装 WanPhys 的 Python 环境，将 `--adapter` 指向公开的 `adapters/wanphys/adapter.py`。[WanPhys 运行说明](adapters/wanphys/README.md)
 
 ```sh
 uv run --no-sync newton-test run --suite cases/regular6.json --case basic_shapes \

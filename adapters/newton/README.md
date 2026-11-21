@@ -1,6 +1,6 @@
 # Newton 1.6 参考适配器
 
-`run.py` 用官方 Newton example 实现[公用评测协议](../../docs/adapter.md)。参考环境为 Python 3.11、Newton v1.6.0、Warp 1.17.0、MuJoCo 和 MuJoCo Warp 3.12.0，以及 NVIDIA GPU。该适配器可在只安装 Newton 和本工具的环境中运行。
+`adapter.py` 用官方 Newton example 实现[公用评测协议](../../docs/adapter.md)。参考环境为 Python 3.11、Newton v1.6.0、Warp 1.17.0、MuJoCo 和 MuJoCo Warp 3.12.0，以及 NVIDIA GPU。该适配器可在只安装 Newton 和本工具的环境中运行。
 
 ## 安装
 
@@ -22,7 +22,7 @@ uv pip install --python .venv/bin/python \
 用两次 Newton 运行验证工具链和图、显存监测。
 
 ```sh
-NEWTON_ADAPTER=".venv/bin/python adapters/newton/run.py"
+NEWTON_ADAPTER=".venv/bin/python -m newton_test_tools worker --adapter adapters/newton/adapter.py"
 
 uv run --no-sync newton-test run --suite cases/regular6.json --case basic_shapes \
   --reference "$NEWTON_ADAPTER" --candidate "$NEWTON_ADAPTER" \
@@ -34,7 +34,7 @@ uv run --no-sync newton-test verify runs/newton-smoke
 
 正式比较时将 `--candidate` 替换为参评引擎的适配器命令，使用清单的默认测试长度。目录中的 `identity.json` 给出参考引擎的刚体和形状标识。候选端的精度请求也包含同一份映射。
 
-适配器复用原有场景的构建、`step()` 和控制器，并把步进及采集回调交给工具的 `run_trial()`。精度模式在构造阶段设置求解器 `GPU_TO_GPU` 与外部碰撞排序，跳过 example 的 graph 捕获及其内部预热。MuJoCo 的世界质心速度从分离的 FK 状态取得。性能模式使用 example 的原生 graph，在首个预热步核对 graph replay。两种模式均配置 MuJoCo 外部碰撞和关闭传感器。报告记录运行参数、Python 和 Newton 版本以及 example 哈希。
+官方 example 没有统一的 graph 和确定性参数。适配器在试验进程内配置初始化，取得传给 `newton.examples.run` 的场景，并把 `step()`、读数接口和物理 graph 句柄交给工具。精度模式设置求解器 `GPU_TO_GPU` 与外部碰撞排序，跳过 example 的 graph 捕获及其内部预热。MuJoCo 的世界质心速度从分离的 FK 状态取得。性能模式使用 example 的原生 graph，公用 `worker` 在首个预热步核对 graph 重放。两种模式均配置 MuJoCo 外部碰撞和关闭传感器。报告记录运行参数、Python 和 Newton 版本以及 example 哈希。
 
 ## 20 world Hydro 的确定性参考
 

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .protocol import load_suite, positive_int, positive_number, read_json, write_json
 from .runner import compare_trajectories, run, verify
+from .worker import run_worker
 
 
 def _add_case_arguments(parser: argparse.ArgumentParser, *, repeatable: bool = False) -> None:
@@ -37,6 +38,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     execute.add_argument("--output", type=Path, required=True, help="New run directory.")
 
+    worker = commands.add_parser("worker", help="Run one trial from an engine adapter module or file.")
+    worker.add_argument("--adapter", required=True, help="Importable module or Python file exporting prepare_trial().")
+    worker.add_argument("--request", type=Path, required=True)
+    worker.add_argument("--output", type=Path, required=True)
+
     compare = commands.add_parser("compare", help="Compare two previously exported trajectories.")
     _add_case_arguments(compare)
     compare.add_argument("--reference", type=Path, required=True)
@@ -55,6 +61,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "worker":
+            run_worker(args.adapter, args.request, args.output)
+            return 0
         if args.command == "verify":
             verify(args.directory)
             print("Artifacts verified and comparison recomputed.")

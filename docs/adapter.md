@@ -1,44 +1,47 @@
 # 评测适配器接口 v1
 
-每家引擎提供一个适配器入口。适配器从请求里的 `case.id` 选择已有 example，按指定的求解器和运行设置构造一个场景实例。这个实例持有本次试验的模型、初态、求解器和控制器，由它的 `step()` 推进完整一帧。
+每家引擎提供一个适配器。适配器从请求里的 `case.id` 选择已有 example，按指定的求解器和运行设置构造一个场景实例。这个实例持有本次试验的模型、初态、求解器和控制器，由它的 `step()` 推进完整一帧。
 
 参评双方公开实际用于测试的适配器源码、运行参数和标识映射。为每个引擎使用独立的 `adapters/<引擎名>/` 目录，并注明运行命令和引擎版本。Newton 参考端和 WanPhys 参评端都可以直接作为接入参考。[Newton 适配器](../adapters/newton/README.md) · [WanPhys 适配器](../adapters/wanphys/README.md)
 
 ## 接入仿真
 
-SiMonitor 的示例先构造场景，再在步进循环中使用 `Monitor`。本工具用 `run_trial()` 将常规精度和性能流程封装起来。性能接入需要步进和设备同步，精度还需要读取初态与帧末状态、接触对。通常可以复用同一引擎的读数函数，只为各场景指定入口、参数和必要的标识映射。[SiMonitor 接入说明](https://github.com/Nodevon-WS/SiMonitor#接入仿真)
+SiMonitor 的示例先构造场景，再在步进循环中使用 `Monitor`。本工具的 `worker` 导入适配器，再把适配器提供的一次试验交给 `run_trial()`。通常可以复用同一引擎的读数函数，只为各场景指定入口、参数和必要的标识映射。[SiMonitor 接入说明](https://github.com/Nodevon-WS/SiMonitor#接入仿真) · [Worker 实现](../src/newton_test_tools/worker.py) · [测试流程](../src/newton_test_tools/monitor.py)
 
-可以直接用公用模板作为 Python 入口。先在候选引擎的 Python 环境中安装本工具，再把 `--scene-module` 指向自己的场景模块。[独立适配器模板](../adapters/example/run.py)
+将 Python 模板复制为自己的适配器，替换场景工厂的导入和引擎名。在候选引擎的 Python 环境安装本工具，再将 `--adapter` 指向可导入的模块或 Python 文件。[Python 适配器模板](../adapters/example/adapter.py)
 
 ```sh
 ENGINE_PY=/path/to/engine/.venv/bin/python
 uv pip install --python "$ENGINE_PY" -e .
-export CANDIDATE_ADAPTER="'$ENGINE_PY' '$PWD/adapters/example/run.py' --scene-module your_engine.benchmark_scenes"
+export CANDIDATE_ADAPTER="'$ENGINE_PY' -m newton_test_tools worker --adapter your_engine.benchmark_adapter"
 ```
 
-自己的模块实现 `create_scene(case, *, device, graph, deterministic, reference_identity)`。函数根据 `case["id"]` 选已有 example，在构造求解器前传入两个开关，并返回可关闭的场景上下文。用引擎自己的设备选择逻辑把 NVML 索引或 UUID 映射到仿真设备。模块需要能由候选环境导入。
+适配器导出上下文管理器 `prepare_trial(request, *, output)`。先按 `case["id"]` 初始化已有场景，在构造求解器前传入两个开关，再 `yield Trial(...)`。上下文退出时释放场景资源。`output` 是本次试验的输出目录。由引擎自己的设备选择逻辑把 NVML 索引或 UUID 映射到仿真设备。模板中的 `create_scene(...)` 是引擎内部的场景工厂。
 
-| 场景接口 | 实现要求 |
+| `Trial` 字段 | 实现要求 |
 | --- | --- |
+| `engine`、`runtime` | 引擎显示名和下文所列的实际帧间隔、设备、场景规模及运行模式。 |
 | `step()` | 推进完整一帧及其所有物理子步。 |
 | `synchronize()` | 等待当次仿真提交在 GPU 上完成。 |
-| `runtime()` | 返回下文所列的实际帧间隔、设备、场景规模及运行模式。 |
 | `read_initial()` | 精度模式下返回 `model`、`shapes`、`initial_state` 与 `velocity_convention`。 |
 | `observe()` | 精度模式下返回当前帧的 `(bodies, contact_pairs)`，使用 Newton 的参考标识。 |
+| `warp_graphs()` | 可选。返回当前物理 Warp graph 的句柄，供工具核验预热时的实际重放。 |
+| `check_final()` | 可选。写报告前核验引擎特有的状态或配置。 |
 
-`adapters/example/run.py` 先创建场景，再把上述接口交给 `run_trial()`。工具负责创建 `Monitor`、读取第 0 帧、逐帧步进与采集，以及性能预热、计时和写报告。两份实际适配器也走同一流程。引擎特有的检查可用 `first_warmup_step` 和 `check_final` 传入，由工具分别在首个预热步和写报告前调用。
+工具负责创建 `Monitor`、读取第 0 帧、逐帧步进与采集，以及性能预热、计时和写报告。Newton 和 WanPhys 使用同一个 `worker` 入口。提供了 `warp_graphs()` 时，工具在首个预热步记录实际重放次数，并在计时前恢复 Warp 原函数。
 
 已有自定义采集循环时，可直接使用 `Monitor`。调用 `advance(dt_s=..., state=..., contact_pairs=...)` 提交同步后的数据，或用 `record_sim_time(t)` 按仿真时钟采样。已有同口径计时循环也可用 `record_performance(timed_frames, elapsed_seconds)` 提交原始计数。
 
 公用运行器负责启动两端、重复试验、采样显存、比较结果和复核。其他语言可用自己的可执行入口，直接按下文的 JSON 协议生成文件。
 
-## 运行入口
+## 进程协议
 
 ```sh
-adapter --request /path/request.json --output /path/run
+python -m newton_test_tools worker --adapter /path/adapter.py \
+  --request /path/request.json --output /path/run
 ```
 
-运行器开启一个新进程并为其创建输出目录。适配器完成后退出 0，并在目录内写 `report.json` 及相应模式的文件。失败用非零退出码并输出原因。运行器收集 stdout 与 stderr 到 `worker.log`。一次调用运行一个场景的一次试验，性能模式下 GPU 仿真由这个进程执行。若入口是 shell 包装脚本，用 `exec` 使适配器成为被监测的进程。
+运行器开启一个新进程并为其创建输出目录。Python 默认使用上面的入口。其他语言可使用自己的可执行文件，接收相同的 `--request` 和 `--output`。试验完成后退出 0，在目录内写 `report.json` 及相应模式的文件。失败用非零退出码并输出原因。运行器收集 stdout 与 stderr 到 `worker.log`。一次调用运行一个场景的一次试验，性能模式下 GPU 仿真由这个进程执行。若入口是 shell 包装脚本，用 `exec` 使执行仿真的进程成为被监测的进程。
 
 请求是 UTF-8 JSON。主要字段如下。
 
@@ -84,7 +87,7 @@ adapter --request /path/request.json --output /path/run
 
 ## 性能数据
 
-适配器用 `protocol.warmup_frames` 预热，先同步设备再开始单次连续墙钟计时，之后每满 `sync_interval_frames` 帧同步一次，达到 `duration_seconds` 时结束。预热沿用 example 的正常步进。计时段关闭渲染、逐帧接触和状态导出。性能报告的 `metrics.timed_frames` 和 `metrics.elapsed_seconds` 是原始计数，由运行器复算 FPS。RTF 定义为墙钟时间 / 仿真时间，作为补充信息。
+工具用 `protocol.warmup_frames` 预热，先同步设备再开始单次连续墙钟计时，之后每满 `sync_interval_frames` 帧同步一次，达到 `duration_seconds` 时结束。预热沿用 example 的正常步进。计时段关闭渲染、逐帧接触和状态导出。性能报告的 `metrics.timed_frames` 和 `metrics.elapsed_seconds` 是原始计数，由运行器复算 FPS。RTF 定义为墙钟时间 / 仿真时间，作为补充信息。
 
 运行器另写 `gpu-memory.json`，记录对应 GPU UUID、驱动、字节峰值、有效采样数和间隔。显存峰值包含建场景、graph 创建、预热和正式运行期间观测到的进程驻留量。NVML 查询间隔之间的瞬时分配可能没被捕获。若设备或场景规模核对失败，保留单端原始值，配对比值为空并给出原因。
 
