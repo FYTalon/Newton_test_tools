@@ -2,6 +2,8 @@
 
 每家引擎提供一个适配器入口。适配器从请求里的 `case.id` 选择已有 example，按指定的求解器和运行设置构造一个场景实例。这个实例持有本次试验的模型、初态、求解器和控制器，由它的 `step()` 推进完整一帧。
 
+参评双方公开实际用于测试的适配器源码、运行参数和标识映射。为每个引擎使用独立的 `adapters/<引擎名>/` 目录，并注明运行命令和引擎版本。Newton 参考端和 WanPhys 参评端都可以直接作为接入参考。[Newton 适配器](../adapters/newton/README.md) · [WanPhys 适配器](../adapters/wanphys/README.md)
+
 ## 接入仿真
 
 SiMonitor 的示例先构造场景，再在步进循环中使用 `Monitor`。这里也可直接用引擎已有的场景对象。性能接入需要步进和设备同步，精度还需要读取初态与帧末状态、接触对。通常可以复用同一引擎的读数函数，只为各场景指定入口、参数和必要的标识映射。 [SiMonitor 接入说明](https://github.com/Nodevon-WS/SiMonitor#接入仿真)
@@ -11,7 +13,7 @@ SiMonitor 的示例先构造场景，再在步进循环中使用 `Monitor`。这
 ```sh
 ENGINE_PY=/path/to/engine/.venv/bin/python
 uv pip install --python "$ENGINE_PY" .
-export CANDIDATE_ADAPTER="$ENGINE_PY $PWD/adapters/example/run.py --scene-module your_engine.benchmark_scenes"
+export CANDIDATE_ADAPTER="'$ENGINE_PY' '$PWD/adapters/example/run.py' --scene-module your_engine.benchmark_scenes"
 ```
 
 自己的模块实现 `create_scene(case, *, device, graph, deterministic, reference_identity)`。函数根据 `case["id"]` 选已有 example，在构造求解器前传入两个开关，并返回可关闭的场景上下文。用引擎自己的设备选择逻辑把 NVML 索引或 UUID 映射到仿真设备。模块需要能由候选环境导入。

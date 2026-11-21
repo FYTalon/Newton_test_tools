@@ -1,0 +1,152 @@
+{
+  "basic_shapes": {
+    "module": "wanphys.examples.newton1_6.basic.example_basic_shapes",
+    "solver": "xpbd",
+    "args": [
+      "--solver",
+      "xpbd"
+    ],
+    "state": "state_0",
+    "labels": {
+      "shapes": {
+        "0": "ground_plane"
+      }
+    }
+  },
+  "basic_conveyor": {
+    "module": "wanphys.examples.newton1_6.basic.example_basic_conveyor",
+    "solver": "xpbd",
+    "args": [
+      "--solver",
+      "xpbd"
+    ],
+    "state": "state_0",
+    "labels": {
+      "shapes": {
+        "0": "ground_plane"
+      }
+    }
+  },
+  "nut_bolt_hydro": {
+    "module": "wanphys.examples.newton1_6.contacts.example_nut_bolt_hydro",
+    "solver": "xpbd",
+    "args": [
+      "--solver",
+      "xpbd",
+      "--world-count",
+      "20",
+      "--num-per-world",
+      "1"
+    ],
+    "state": "state_0"
+  },
+  "basic_pendulum": {
+    "module": "wanphys.examples.newton1_6.basic.example_basic_pendulum",
+    "solver": "xpbd",
+    "args": [],
+    "state": "state_0",
+    "labels": {
+      "bodies": {
+        "0": "body_0",
+        "1": "body_1"
+      },
+      "shapes": {
+        "2": "ground_plane"
+      }
+    }
+  },
+  "robot_g1": {
+    "module": "wanphys.examples.newton1_6.robot.example_robot_g1",
+    "solver": "mujoco",
+    "args": [
+      "--world-count",
+      "4",
+      "--no-use-mujoco-contacts",
+      "--mujoco-backend",
+      "owned"
+    ],
+    "state": "state",
+    "labels": {
+      "shapes": {
+        "416": "ground_plane"
+      }
+    }
+  },
+  "robot_anymal_c_walk": {
+    "module": "wanphys.examples.newton1_6.robot.example_robot_anymal_c_walk",
+    "solver": "mujoco",
+    "args": [
+      "--no-use-mujoco-contacts",
+      "--policy-backend",
+      "warp-nn",
+      "--mujoco-backend",
+      "owned"
+    ],
+    "state": "state",
+    "labels": {
+      "bodies": {
+        "0": "anymal/base",
+        "1": "anymal/LF_HIP",
+        "2": "anymal/LF_THIGH",
+        "3": "anymal/LF_SHANK",
+        "4": "anymal/RF_HIP",
+        "5": "anymal/RF_THIGH",
+        "6": "anymal/RF_SHANK",
+        "7": "anymal/LH_HIP",
+        "8": "anymal/LH_THIGH",
+        "9": "anymal/LH_SHANK",
+        "10": "anymal/RH_HIP",
+        "11": "anymal/RH_THIGH",
+        "12": "anymal/RH_SHANK"
+      },
+      "shapes": {
+        "0": "shape_6",
+        "1": "shape_7",
+        "2": "shape_8",
+        "3": "shape_9",
+        "4": "shape_10",
+        "15": "shape_16",
+        "16": "shape_17",
+        "17": "shape_18",
+        "21": "shape_22",
+        "22": "shape_23",
+        "23": "shape_24",
+        "28": "shape_29",
+        "32": "shape_33",
+        "37": "shape_38",
+        "39": "shape_40",
+        "40": "shape_41",
+        "42": "shape_43",
+        "44": "shape_45",
+        "45": "shape_46",
+        "47": "shape_48",
+        "48": "shape_49",
+        "52": "shape_53",
+        "54": "shape_55",
+        "55": "shape_56",
+        "57": "shape_58",
+        "59": "shape_60",
+        "60": "shape_61",
+        "62": "shape_63",
+        "63": "shape_64",
+        "67": "shape_68",
+        "69": "shape_70",
+        "70": "shape_71",
+        "72": "shape_73",
+        "74": "shape_75",
+        "75": "shape_76",
+        "77": "shape_78",
+        "78": "shape_79",
+        "82": "shape_83",
+        "84": "shape_85",
+        "85": "shape_86",
+        "87": "shape_88",
+        "89": "shape_90",
+        "90": "shape_91",
+        "92": "shape_93",
+        "93": "shape_94",
+        "96": "ground_plane"
+      }
+    }
+  }
+}
