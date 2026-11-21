@@ -34,7 +34,7 @@ uv run --no-sync newton-test verify runs/newton-smoke
 
 正式比较时将 `--candidate` 替换为参评引擎的适配器命令，使用清单的默认测试长度。目录中的 `identity.json` 给出参考引擎的刚体和形状标识。候选端的精度请求也包含同一份映射。
 
-适配器复用原有场景的构建、`step()` 和控制器。精度模式在构造阶段设置求解器 `GPU_TO_GPU` 与外部碰撞排序，跳过 example 的 graph 捕获及其内部预热。用 `with monitor.step(dt): scene.step()` 在每帧推进后同步并读取状态和接触。MuJoCo 的世界质心速度从分离的 FK 状态取得。性能模式使用 example 的原生 graph，首个预热步核对 graph replay，`Monitor.measure(scene.step)` 负责计时。两种模式均配置 MuJoCo 外部碰撞和关闭传感器。报告记录运行参数、Python 和 Newton 版本以及 example 哈希。
+适配器复用原有场景的构建、`step()` 和控制器，并把步进及采集回调交给工具的 `run_trial()`。精度模式在构造阶段设置求解器 `GPU_TO_GPU` 与外部碰撞排序，跳过 example 的 graph 捕获及其内部预热。MuJoCo 的世界质心速度从分离的 FK 状态取得。性能模式使用 example 的原生 graph，在首个预热步核对 graph replay。两种模式均配置 MuJoCo 外部碰撞和关闭传感器。报告记录运行参数、Python 和 Newton 版本以及 example 哈希。
 
 ## 20 world Hydro 的确定性参考
 

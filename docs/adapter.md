@@ -6,13 +6,13 @@
 
 ## 接入仿真
 
-SiMonitor 的示例先构造场景，再在步进循环中使用 `Monitor`。这里也可直接用引擎已有的场景对象。性能接入需要步进和设备同步，精度还需要读取初态与帧末状态、接触对。通常可以复用同一引擎的读数函数，只为各场景指定入口、参数和必要的标识映射。 [SiMonitor 接入说明](https://github.com/Nodevon-WS/SiMonitor#接入仿真)
+SiMonitor 的示例先构造场景，再在步进循环中使用 `Monitor`。本工具用 `run_trial()` 将常规精度和性能流程封装起来。性能接入需要步进和设备同步，精度还需要读取初态与帧末状态、接触对。通常可以复用同一引擎的读数函数，只为各场景指定入口、参数和必要的标识映射。[SiMonitor 接入说明](https://github.com/Nodevon-WS/SiMonitor#接入仿真)
 
 可以直接用公用模板作为 Python 入口。先在候选引擎的 Python 环境中安装本工具，再把 `--scene-module` 指向自己的场景模块。[独立适配器模板](../adapters/example/run.py)
 
 ```sh
 ENGINE_PY=/path/to/engine/.venv/bin/python
-uv pip install --python "$ENGINE_PY" .
+uv pip install --python "$ENGINE_PY" -e .
 export CANDIDATE_ADAPTER="'$ENGINE_PY' '$PWD/adapters/example/run.py' --scene-module your_engine.benchmark_scenes"
 ```
 
@@ -20,16 +20,15 @@ export CANDIDATE_ADAPTER="'$ENGINE_PY' '$PWD/adapters/example/run.py' --scene-mo
 
 | 场景接口 | 实现要求 |
 | --- | --- |
-| `frame_dt` | 实际完整帧时间，单位为秒。 |
 | `step()` | 推进完整一帧及其所有物理子步。 |
 | `synchronize()` | 等待当次仿真提交在 GPU 上完成。 |
-| `runtime()` | 返回下文所列的实际设备、场景规模及运行模式。 |
+| `runtime()` | 返回下文所列的实际帧间隔、设备、场景规模及运行模式。 |
 | `read_initial()` | 精度模式下返回 `model`、`shapes`、`initial_state` 与 `velocity_convention`。 |
 | `observe()` | 精度模式下返回当前帧的 `(bodies, contact_pairs)`，使用 Newton 的参考标识。 |
 
-`adapters/example/run.py` 先创建场景，再把上述接口交给 `Monitor`。精度路径先提交第 0 帧，再执行 `with monitor.step(scene.frame_dt): scene.step()`。性能路径调用 `monitor.measure(scene.step)`，该路径只使用仿真步进和设备同步。
+`adapters/example/run.py` 先创建场景，再把上述接口交给 `run_trial()`。工具负责创建 `Monitor`、读取第 0 帧、逐帧步进与采集，以及性能预热、计时和写报告。两份实际适配器也走同一流程。引擎特有的检查可用 `first_warmup_step` 和 `check_final` 传入，由工具分别在首个预热步和写报告前调用。
 
-`Monitor` 在精度步进结束后调用同步与读数回调，在性能模式负责预热和计时。若已有采集循环，可调用 `advance(dt_s=..., state=..., contact_pairs=...)` 提交同步后的数据，或用 `record_sim_time(t)` 按仿真时钟采样。性能的 `first_warmup_step` 可用于核验 graph，已有同口径计时循环也可用 `record_performance(timed_frames, elapsed_seconds)` 提交原始计数。
+已有自定义采集循环时，可直接使用 `Monitor`。调用 `advance(dt_s=..., state=..., contact_pairs=...)` 提交同步后的数据，或用 `record_sim_time(t)` 按仿真时钟采样。已有同口径计时循环也可用 `record_performance(timed_frames, elapsed_seconds)` 提交原始计数。
 
 公用运行器负责启动两端、重复试验、采样显存、比较结果和复核。其他语言可用自己的可执行入口，直接按下文的 JSON 协议生成文件。
 

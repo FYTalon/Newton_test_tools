@@ -192,6 +192,49 @@ class Monitor:
         return self._metrics
 
 
+def run_trial(
+    output: str | Path,
+    config: MonitorConfig,
+    *,
+    request: dict[str, Any],
+    runtime: dict[str, Any],
+    step: Callable[[], None],
+    synchronize: Callable[[], None] | None = None,
+    read_initial: Callable[[], dict[str, Any]] | None = None,
+    observe: Observation | None = None,
+    first_warmup_step: Callable[[], None] | None = None,
+    check_final: Callable[[], None] | None = None,
+) -> None:
+    """Drive a configured engine for one accuracy or performance trial.
+
+    The engine provides a full-frame step, synchronization, and optional
+    accuracy readers and validation hooks. Monitor owns sampling and timing.
+    """
+    accuracy = request["mode"] == "accuracy"
+    with Monitor(
+        output,
+        config,
+        request=request,
+        runtime=runtime,
+        synchronize=synchronize,
+        observe=observe if accuracy else None,
+    ) as monitor:
+        if accuracy:
+            if read_initial is None or observe is None:
+                raise ValueError("accuracy requires initial-state and frame readers")
+            if synchronize is not None:
+                synchronize()
+            monitor.start(**read_initial())
+            frame_dt = runtime["frame_dt_seconds"]
+            for _ in range(request["protocol"]["num_frames"]):
+                with monitor.step(frame_dt):
+                    step()
+        else:
+            monitor.measure(step, first_warmup_step=first_warmup_step)
+        if check_final is not None:
+            check_final()
+
+
 def performance_metrics(request: dict[str, Any], timed_frames: int, elapsed_seconds: float) -> dict[str, Any]:
     timed_frames = positive_int(timed_frames, "timed_frames")
     elapsed_seconds = positive_number(elapsed_seconds, "elapsed_seconds")

@@ -99,6 +99,9 @@ class RigidReader:
                 rows.append({"world": world, "name": name, "body": body, "type": kind})
         return sorted(rows, key=lambda row: (row["world"], row["name"]))
 
+    def read_initial(self) -> dict[str, Any]:
+        return {"model": self.model_rows, "shapes": self.shape_rows, "initial_state": self.bodies()}
+
     def bodies(self) -> list[dict[str, Any]]:
         live_state = getattr(self._scene, self._state_name)
         state = live_state

@@ -64,6 +64,9 @@ class RigidReader:
             key=lambda row: (row["world"], row["name"]),
         )
 
+    def read_initial(self) -> dict[str, Any]:
+        return {"model": self.model_rows, "shapes": self.shape_rows, "initial_state": self.bodies()}
+
     def bodies(self) -> list[dict[str, Any]]:
         state = self.scene.state_0
         if self._fk_state is not None:

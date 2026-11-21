@@ -69,13 +69,13 @@ Python 可以直接复用仓库里的入口，配套提供一个能导入的模�
 
 | 场景接口 | 提供的能力 |
 | --- | --- |
-| `frame_dt`、`step()` | 报告帧间隔，推进完整一帧及全部物理子步。 |
+| `step()` | 推进完整一帧及全部物理子步。 |
 | `synchronize()` | 等待 GPU 完成仿真。 |
-| `runtime()` | 报告实际设备 UUID、求解器、场景规模和两个开关。 |
+| `runtime()` | 报告实际帧间隔、设备 UUID、求解器、场景规模和两个开关。 |
 | `read_initial()` | 精度模式下提供模型、形状表、第 0 帧状态和速度约定。 |
 | `observe()` | 精度模式下返回帧末的 `(bodies, contact_pairs)`。 |
 
-精度先记录第 0 帧，再逐帧读取刚体状态和求解过程中留下的有效形状对。性能计时只执行步进和设备同步。Python 的 `Monitor` 会生成协议文件，其他语言可以直接写 `report.json` 和精度模式所需的 `trajectory.json`。模型、接触、计时及输出字段见[适配器协议](docs/adapter.md)。
+Python 适配器把上述接口交给工具的 `run_trial()`。精度由工具记录第 0 帧，再逐帧采集刚体状态和有效形状对。性能由工具预热、计时和生成报告，计时段调用步进和同步。其他语言可直接写 `report.json` 和精度模式所需的 `trajectory.json`。模型、接触、计时及输出字段见[适配器协议](docs/adapter.md)。
 
 ## 4. 接入自己的引擎测试
 
@@ -83,7 +83,7 @@ Python 可以直接复用仓库里的入口，配套提供一个能导入的模�
 
 ```sh
 ENGINE_PY=/path/to/engine/.venv/bin/python
-uv pip install --python "$ENGINE_PY" .
+uv pip install --python "$ENGINE_PY" -e .
 CANDIDATE_ADAPTER="'$ENGINE_PY' '$PWD/adapters/example/run.py' --scene-module your_engine.benchmark_scenes"
 NEWTON_ADAPTER=".venv/bin/python adapters/newton/run.py"
 ```

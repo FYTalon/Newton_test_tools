@@ -20,7 +20,7 @@ import newton
 import newton.examples
 import warp as wp
 
-from newton_test_tools import Monitor, MonitorConfig, read_request
+from newton_test_tools import MonitorConfig, read_request, run_trial
 
 from snapshot import RigidReader
 
@@ -73,7 +73,9 @@ def _physics_graphs(scene: Any) -> tuple[Any, ...]:
     return tuple(graph for name in ("graph", "graph_alt") if (graph := getattr(scene, name, None)) is not None)
 
 
-def _measure(scene: Any, monitor: Monitor, *, graph: bool) -> None:
+def _graph_hooks(
+    scene: Any, runtime: dict[str, Any], *, graph: bool
+) -> tuple[Callable[[], None] | None, Callable[[], None]]:
     graphs = _physics_graphs(scene)
     launches = 0
 
@@ -91,10 +93,12 @@ def _measure(scene: Any, monitor: Monitor, *, graph: bool) -> None:
         if launches == 0:
             raise ValueError("Newton did not replay the physics graph during warmup")
 
-    monitor.measure(scene.step, first_warmup_step=first_warmup_step if graph else None)
-    if graphs != _physics_graphs(scene):
-        raise ValueError("Newton physics graph changed during the timed run")
-    monitor.runtime["warmup_physics_graph_replays"] = launches
+    def check_graphs() -> None:
+        if graphs != _physics_graphs(scene):
+            raise ValueError("Newton physics graph changed during the timed run")
+        runtime["warmup_physics_graph_replays"] = launches
+
+    return (first_warmup_step if graph else None), check_graphs
 
 
 def _record(
@@ -160,6 +164,7 @@ def _record(
 
         try:
             reader = None
+            first_warmup_step = check_final = None
             if mode == "accuracy":
                 runtime["contact_stage"] = "end_of_frame"
                 reader = RigidReader(scene, mujoco=solver_name == "mujoco")
@@ -171,22 +176,19 @@ def _record(
                 collide = int(newton.ShapeFlags.COLLIDE_SHAPES)
                 counts["collidable_shape_count"] = int(((model.shape_flags.numpy() & collide) != 0).sum())
                 runtime["model_counts"] = counts
-            with Monitor(
+                first_warmup_step, check_final = _graph_hooks(scene, runtime, graph=protocol["graph"])
+            run_trial(
                 output,
                 config,
                 request=request,
                 runtime=runtime,
+                step=scene.step,
                 synchronize=synchronize,
+                read_initial=reader.read_initial if reader is not None else None,
                 observe=reader.observe if reader is not None else None,
-            ) as monitor:
-                if reader is not None:
-                    synchronize()
-                    monitor.start(model=reader.model_rows, shapes=reader.shape_rows, initial_state=reader.bodies())
-                    for _ in range(protocol["num_frames"]):
-                        with monitor.step(scene.frame_dt):
-                            scene.step()
-                else:
-                    _measure(scene, monitor, graph=protocol["graph"])
+                first_warmup_step=first_warmup_step,
+                check_final=check_final,
+            )
         finally:
             scene.viewer.close()
 

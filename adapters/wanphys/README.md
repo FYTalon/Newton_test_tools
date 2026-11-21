@@ -1,6 +1,6 @@
 # WanPhys 适配器
 
-`run.py` 是公开评测的 WanPhys 参评端入口。它用 `scenes.json` 选择六例的模块和参数，将请求里的确定性和 graph 布尔值传给例子的 `create_scene(argv)`，并检查实际求解器、碰撞配置与 graph 状态。[场景配置及标识映射](scenes.json)
+`run.py` 是公开评测的 WanPhys 参评端入口。它用 `scenes.json` 选择六例的模块和参数，将请求里的确定性和 graph 布尔值传给例子的 `create_scene(argv)`，并检查实际求解器、碰撞配置与 graph 状态。步进、状态读取和 graph 检查均以回调交给工具的 `run_trial()`。[场景配置及标识映射](scenes.json)
 
 ## 运行
 
@@ -10,7 +10,7 @@
 
 ```sh
 WANPHYS_PY=/path/to/WanPhys/.venv/bin/python
-uv pip install --python "$WANPHYS_PY" .
+uv pip install --python "$WANPHYS_PY" -e .
 NEWTON_ADAPTER=".venv/bin/python adapters/newton/run.py"
 CANDIDATE_ADAPTER="'$WANPHYS_PY' '$PWD/adapters/wanphys/run.py'"
 ```

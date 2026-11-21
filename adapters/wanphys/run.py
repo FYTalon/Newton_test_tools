@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import sys
+from collections.abc import Callable
 from importlib import import_module
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,7 @@ from unittest.mock import patch
 import mujoco
 import wanphys
 import warp as wp
-from newton_test_tools import Monitor, MonitorConfig, read_request
+from newton_test_tools import MonitorConfig, read_request, run_trial
 from newton_test_tools.protocol import read_json
 from wanphys.rigid import SolverXPBD
 
@@ -95,7 +96,7 @@ def _physics_graphs(scene: Any) -> tuple[Any, ...]:
     return tuple(graph for name in ("graph", "graph_alt") if (graph := getattr(scene, name, None)) is not None)
 
 
-def _measure(scene: Any, monitor: Monitor) -> None:
+def _graph_hooks(scene: Any, runtime: dict[str, Any]) -> tuple[Callable[[], None] | None, Callable[[], None]]:
     graphs = _physics_graphs(scene)
     launches = 0
 
@@ -113,11 +114,13 @@ def _measure(scene: Any, monitor: Monitor) -> None:
         if launches == 0:
             raise ValueError("WanPhys did not replay the physics graph during warmup")
 
-    monitor.measure(scene.step, first_warmup_step=first_warmup_step if graphs else None)
-    if _physics_graphs(scene) != graphs:
-        raise ValueError("WanPhys physics graph changed during the timed run")
-    if graphs:
-        monitor.runtime["warmup_physics_graph_replays"] = launches
+    def check_graphs() -> None:
+        if _physics_graphs(scene) != graphs:
+            raise ValueError("WanPhys physics graph changed during the timed run")
+        if graphs:
+            runtime["warmup_physics_graph_replays"] = launches
+
+    return (first_warmup_step if graphs else None), check_graphs
 
 
 def _run_trial(
@@ -159,6 +162,7 @@ def _run_trial(
         wp.synchronize_device(device)
 
     reader = None
+    first_warmup_step = check_graphs = None
     if request["mode"] == "accuracy":
         runtime["contact_stage"] = "end_of_frame"
         reader = RigidReader(scene, spec["state"], spec.get("labels", {}), mujoco=case["solver"] == "mujoco")
@@ -170,25 +174,26 @@ def _run_trial(
         }
         counts["collidable_shape_count"] = int(((model.shape_flags.numpy() & COLLIDE_SHAPES) != 0).sum())
         runtime["model_counts"] = counts
+        first_warmup_step, check_graphs = _graph_hooks(scene, runtime)
+
+    def check_final() -> None:
+        if check_graphs is not None:
+            check_graphs()
+        _solver_settings(scene, case["solver"], settings["deterministic"])
 
     config = MonitorConfig(engine="WanPhys", gpu_devices=tuple(request["gpu_devices"]))
-    with Monitor(
+    run_trial(
         output,
         config,
         request=request,
         runtime=runtime,
+        step=scene.step,
         synchronize=synchronize,
+        read_initial=reader.read_initial if reader is not None else None,
         observe=reader.observe if reader is not None else None,
-    ) as monitor:
-        if reader is None:
-            _measure(scene, monitor)
-        else:
-            synchronize()
-            monitor.start(model=reader.model_rows, shapes=reader.shape_rows, initial_state=reader.bodies())
-            for _ in range(settings["num_frames"]):
-                with monitor.step(scene.frame_dt):
-                    scene.step()
-        _solver_settings(scene, case["solver"], settings["deterministic"])
+        first_warmup_step=first_warmup_step,
+        check_final=check_final,
+    )
 
 
 def main() -> int:

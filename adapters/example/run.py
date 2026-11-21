@@ -5,7 +5,7 @@ import argparse
 from importlib import import_module
 from pathlib import Path
 
-from newton_test_tools import Monitor, MonitorConfig, read_request
+from newton_test_tools import MonitorConfig, read_request, run_trial
 
 
 def main() -> None:
@@ -27,22 +27,16 @@ def main() -> None:
         deterministic=settings["deterministic"],
         reference_identity=request.get("reference_identity"),
     ) as scene:
-        with Monitor(
+        run_trial(
             args.output,
             config,
             request=request,
             runtime=scene.runtime(),
+            step=scene.step,
             synchronize=scene.synchronize,
+            read_initial=scene.read_initial if accuracy else None,
             observe=scene.observe if accuracy else None,
-        ) as monitor:
-            if accuracy:
-                scene.synchronize()
-                monitor.start(**scene.read_initial())
-                for _ in range(settings["num_frames"]):
-                    with monitor.step(scene.frame_dt):
-                        scene.step()
-            else:
-                monitor.measure(scene.step)
+        )
 
 
 if __name__ == "__main__":
