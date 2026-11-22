@@ -4,10 +4,9 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| `scenes.json` | 将六个 `case.id` 映射到 NovaPhy 的场景模块及其构造入口。 |
-| `adapter.py` | 按请求创建试验，核验求解器和实际开关，并向 `worker` 提供 `Trial`。 |
+| `scenes.json` | 将六个 `case.id` 映射到场景入口，并记录 G1 的碰撞形状映射。 |
+| `adapter.py` | 按请求创建试验，适配机器人场景的步进和 CUDA Graph，并向 `worker` 提供 `Trial`。 |
 | `snapshot.py` | 采集刚体初态、逐帧状态和有效接触对，使用 Newton 的参考标识。 |
-| `robots.py`、`g1_shapes.json` | 初始化 G1、ANYmal，并提供 G1 的碰撞形状映射。 |
 
 ## 六例测试
 
