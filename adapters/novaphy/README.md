@@ -14,6 +14,7 @@
 
 ```sh
 NOVAPHY_PY=/path/to/novaphy/.venv/bin/python
+uv pip install --python "$NOVAPHY_PY" -e .
 NEWTON_ADAPTER=".venv/bin/python -m newton_test_tools worker --adapter adapters/newton/adapter.py"
 CANDIDATE_ADAPTER="'$NOVAPHY_PY' -m newton_test_tools worker --adapter '$PWD/adapters/novaphy/adapter.py'"
 

@@ -19,7 +19,6 @@ from uuid import UUID
 import novaphy
 import numpy as np
 from newton_test_tools import Trial
-from novaphy.demos import data_path
 from novaphy.viewer import ViewerNull
 
 from .snapshot import RigidReader, _array
@@ -104,11 +103,7 @@ class _RobotScene:
             if runtime.policy_io is None:
                 raise RuntimeError("ANYmal requires the demo's CUDA policy path")
             if not graph:
-                disable_graph = getattr(runtime.policy_io, "disable_graph", None)
-                if disable_graph is None:
-                    runtime.policy_io._is_cuda = False
-                else:
-                    disable_graph()
+                runtime.policy_io.disable_graph()
         if graph:
             self._capture()
 
@@ -167,7 +162,7 @@ def _create_robot(
     make_pipeline = novaphy.CollisionPipeline
 
     def solver_config(**kwargs):
-        return make_config(**{**kwargs, "deterministic": deterministic, "disable_sensors": True, "use_mujoco_contacts": False})
+        return make_config(**{**kwargs, "disable_sensors": True, "use_mujoco_contacts": False})
 
     def collision_pipeline(*args, **kwargs):
         return make_pipeline(*args, **{**kwargs, "deterministic": deterministic})
@@ -196,7 +191,7 @@ def prepare_trial(request: dict[str, Any], *, output: Path) -> Iterator[Trial]:
     accuracy = request["mode"] == "accuracy"
     if accuracy and request.get("reference_identity") is None:
         raise ValueError(f"NovaPhy {case_id} accuracy requires Newton reference_identity")
-    frames = settings["num_frames"] if accuracy else round(20 / case["frame_dt_seconds"])
+    frames = settings["num_frames"] + (0 if accuracy else settings["warmup_frames"])
     context = (
         nullcontext(_create_robot(case, settings, frames, spec))
         if is_robot else _xpbd_scene(case, settings, frames, spec)
@@ -239,21 +234,13 @@ def prepare_trial(request: dict[str, Any], *, output: Path) -> Iterator[Trial]:
                 "collidable_shape_count": int(np.count_nonzero(shape_flags & int(novaphy.ShapeFlags.COLLIDE_SHAPES))),
             },
         }
-        if case_id == "basic_shapes":
-            runtime["bunny_sha256"] = _sha256(next(Path(data_path()).rglob("bunny.usd")))
-        shape_aliases = {}
-        if case_id == "robot_g1":
-            runtime["asset_sha256"] = _sha256(example.G1_USD)
-            shape_aliases = spec["labels"]["shapes"]
-            alias_bytes = (json.dumps(shape_aliases, indent=2) + "\n").encode("utf-8")
-            runtime["shape_aliases_sha256"] = hashlib.sha256(alias_bytes).hexdigest()
-        if case_id == "robot_anymal_c_walk":
-            runtime["policy_sha256"] = _sha256(scene.runtime.asset_paths.policy_path)
-        reader = RigidReader(
-            scene, request["reference_identity"], shape_flags, mujoco=is_robot, shape_aliases=shape_aliases,
-        ) if accuracy else None
+        reader = None
         if accuracy:
             runtime["contact_stage"] = "end_of_frame"
+            reader = RigidReader(
+                scene, request["reference_identity"], shape_flags, mujoco=is_robot,
+                shape_aliases=spec.get("labels", {}).get("shapes", {}),
+            )
         yield Trial(
             engine="NovaPhy",
             runtime=runtime,
