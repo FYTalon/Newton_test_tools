@@ -26,7 +26,7 @@ NEWTON_ADAPTER=".venv/bin/python -m newton_test_tools worker --adapter adapters/
 
 uv run --no-sync newton-test run --suite cases/regular6.json --case basic_shapes \
   --reference "$NEWTON_ADAPTER" --candidate "$NEWTON_ADAPTER" \
-  --frames 8 --repetitions 1 --duration 2 --performance-repetitions 1 \
+  --repetitions 1 --performance-repetitions 1 \
   --output runs/newton-smoke
 
 uv run --no-sync newton-test verify runs/newton-smoke

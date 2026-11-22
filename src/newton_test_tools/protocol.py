@@ -81,7 +81,7 @@ def _check_protocol(mode: str, config: dict[str, Any]) -> None:
         if config["contact_stage"] != "end_of_frame":
             raise ValueError("v1 requires end_of_frame contacts")
     elif mode == "performance":
-        positive_number(config["duration_seconds"], "duration_seconds")
+        positive_int(config["num_frames"], "performance.num_frames")
         positive_int(config.get("repetitions", 1), "performance.repetitions")
         positive_number(config["memory_sample_interval_ms"], "memory_sample_interval_ms")
         positive_int(config["warmup_frames"], "warmup_frames", minimum=0)

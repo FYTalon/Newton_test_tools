@@ -171,17 +171,16 @@ class Monitor:
             (first_warmup_step if frame == 0 and first_warmup_step is not None else step)()
         if synchronize is not None:
             synchronize()
-        timed_frames, elapsed = 0, 0.0
+        frame_count = protocol["num_frames"]
         batch_frames = protocol["sync_interval_frames"]
         start = time.perf_counter()
-        while elapsed < protocol["duration_seconds"]:
-            for _ in range(batch_frames):
+        for batch_start in range(0, frame_count, batch_frames):
+            count = min(batch_frames, frame_count - batch_start)
+            for _ in range(count):
                 step()
             if synchronize is not None:
                 synchronize()
-            timed_frames += batch_frames
-            elapsed = time.perf_counter() - start
-        return self.record_performance(timed_frames, elapsed)
+        return self.record_performance(frame_count, time.perf_counter() - start)
 
     def record_performance(self, timed_frames: int, elapsed_seconds: float) -> dict[str, Any]:
         """Publish raw counters from an existing timing loop using this protocol."""
@@ -238,9 +237,8 @@ def run_trial(
 def performance_metrics(request: dict[str, Any], timed_frames: int, elapsed_seconds: float) -> dict[str, Any]:
     timed_frames = positive_int(timed_frames, "timed_frames")
     elapsed_seconds = positive_number(elapsed_seconds, "elapsed_seconds")
-    protocol = request["protocol"]
-    if elapsed_seconds < protocol["duration_seconds"] or timed_frames % protocol["sync_interval_frames"]:
-        raise ValueError("incomplete timed duration or incomplete synchronization batch")
+    if timed_frames != request["protocol"]["num_frames"]:
+        raise ValueError("timed frame count differs from the requested performance frame count")
     simulation_seconds = timed_frames * request["case"]["frame_dt_seconds"]
     return {
         "timed_frames": timed_frames,
