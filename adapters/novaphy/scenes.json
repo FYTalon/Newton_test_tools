@@ -1,0 +1,40 @@
+{
+  "basic_shapes": {
+    "solver": "xpbd",
+    "module": "novaphy.demos.xpbd.demo_basic_shapes",
+    "class": "Demo",
+    "parser": "create_parser"
+  },
+  "basic_conveyor": {
+    "solver": "xpbd",
+    "module": "novaphy.demos.xpbd.demo_basic_conveyor",
+    "class": "Demo",
+    "parser": "create_parser"
+  },
+  "nut_bolt_hydro": {
+    "solver": "xpbd",
+    "module": "novaphy.demos.xpbd.demo_nut_bolt_hydro",
+    "class": "NutBoltHydroDemo",
+    "parser": "parser"
+  },
+  "basic_pendulum": {
+    "solver": "xpbd",
+    "module": "novaphy.demos.xpbd.demo_basic_pendulum",
+    "class": "Demo",
+    "parser": "create_parser"
+  },
+  "robot_g1": {
+    "solver": "mujoco",
+    "module": "novaphy.demos.mujoco.demo_robot_g1",
+    "config": "G1Config",
+    "factory": "create_g1_runtime",
+    "step": "step_g1_runtime"
+  },
+  "robot_anymal_c_walk": {
+    "solver": "mujoco",
+    "module": "novaphy.demos.mujoco.demo_robot_anymal_c_walk",
+    "config": "AnymalCWalkConfig",
+    "factory": "create_anymal_c_walk_runtime",
+    "step": "step_anymal_c_walk_runtime"
+  }
+}
