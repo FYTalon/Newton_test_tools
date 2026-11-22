@@ -87,10 +87,10 @@ python -m newton_test_tools worker --adapter /path/adapter.py \
 
 ## 性能数据
 
-工具用 `protocol.warmup_frames` 预热，先同步设备再开始单次连续墙钟计时，之后每满 `sync_interval_frames` 帧同步一次，达到 `duration_seconds` 时结束。预热沿用 example 的正常步进。计时段关闭渲染、逐帧接触和状态导出。性能报告的 `metrics.timed_frames` 和 `metrics.elapsed_seconds` 是原始计数，由运行器复算 FPS。RTF 定义为墙钟时间 / 仿真时间，作为补充信息。
+工具用 `protocol.warmup_frames` 预热，同步设备后开始墙钟计时。每轮计时 `protocol.num_frames` 帧，每满 `sync_interval_frames` 帧同步一次，最后一批不足时也同步。预热沿用 example 的正常步进。计时段关闭渲染、逐帧接触和状态导出。性能报告的 `metrics.timed_frames` 和 `metrics.elapsed_seconds` 是原始计数，由运行器复算 FPS。RTF 定义为墙钟时间 / 仿真时间，作为补充信息。
 
 运行器另写 `gpu-memory.json`，记录对应 GPU UUID、驱动、字节峰值、有效采样数和间隔。显存峰值包含建场景、graph 创建、预热和正式运行期间观测到的进程驻留量。NVML 查询间隔之间的瞬时分配可能没被捕获。若设备或场景规模核对失败，保留单端原始值，配对比值为空并给出原因。
 
-性能重复次数由 `protocol.repetitions` 指定，适配器每次启动仍只执行一次计时。常规六例每端为 3 次。每次的报告和 NVML 峰值保存在 `run-N`，汇总 JSON 的 `trials` 保留各次原始值，`mean` 给出 FPS 和各次显存峰值的算术平均。FPS 比和显存比分别用候选端与参考端的对应均值相除。旧清单省略此字段时按一次处理。
+性能重复次数由 `protocol.repetitions` 指定，适配器每次启动执行一次计时。常规六例每端为 3 次，每次计时 500 帧。每次的报告和 NVML 峰值保存在 `run-N`，汇总 JSON 的 `trials` 保留各次原始值。汇总 FPS 为各轮总帧数除以总墙钟耗时，`mean.elapsed_seconds` 记录单轮平均耗时。显存取各轮峰值的算术平均，两个比值均用候选端结果除以参考端结果。
 
 每次场景步进算一帧，多 world 并行也按场景帧计数。相对 SiMonitor 的单端监控，这里的公用协议补充了配对运行、轨迹与碰撞形状对、参考标识映射，以及精度、FPS 和显存比。性能显存采用外部进程轮询。

@@ -18,9 +18,9 @@
 | 模式 | 确定性 | 场景级 graph | 每例每端默认运行 |
 | --- | --- | --- | --- |
 | 精度 | 开 | 关 | 从相同初态连续运行 500 帧，独立运行 2 次 |
-| 性能 | 关 | 有此模式时开启 | 预热 5 帧后计时 600 秒，独立运行 3 次 |
+| 性能 | 关 | 有此模式时开启 | 预热 5 帧后计时 500 帧，独立运行 3 次 |
 
-精度用第一次轨迹计算碰撞形状对误差 `x_C`、动力学响应误差 `x_D` 和运动学误差 `x_K`，第二次用来检查该端是否可重复。性能在同一张 GPU 上顺序运行，每 5 帧同步一次。运行器用 NVML 每 10 ms 采样进程显存，包含初始化和预热阶段。FPS 比和显存比分别用参评端和参考端的三次均值相除。
+精度用第一次轨迹计算碰撞形状对误差 `x_C`、动力学响应误差 `x_D` 和运动学误差 `x_K`，第二次用来检查该端是否可重复。性能在同一张 GPU 上顺序运行，每 5 帧同步一次。运行器用 NVML 每 10 ms 采样进程显存，包含初始化和预热阶段。性能 FPS 为三轮计时总帧数除以总墙钟耗时，显存取各轮峰值的算术平均。两个比值均用参评端结果除以参考端结果。
 
 ## 2. Newton 自检
 
@@ -44,7 +44,7 @@ NEWTON_ADAPTER=".venv/bin/python -m newton_test_tools worker --adapter adapters/
 
 uv run --no-sync newton-test run --suite cases/regular6.json --case basic_shapes \
   --reference "$NEWTON_ADAPTER" --candidate "$NEWTON_ADAPTER" \
-  --frames 8 --repetitions 1 --duration 2 --performance-repetitions 1 \
+  --repetitions 1 --performance-repetitions 1 \
   --output runs/newton-smoke
 
 uv run --no-sync newton-test report runs/newton-smoke
@@ -82,20 +82,20 @@ CANDIDATE_ADAPTER="'$ENGINE_PY' -m newton_test_tools worker --adapter your_engin
 NEWTON_ADAPTER=".venv/bin/python -m newton_test_tools worker --adapter adapters/newton/adapter.py"
 ```
 
-已有独立入口时，可将 `CANDIDATE_ADAPTER` 设为其完整命令，例如 `/path/to/engine/bin/benchmark_adapter`。运行器会追加本次试验的请求和输出参数。先用 `basic_shapes` 跑 100 帧短测，检查首次接触后的形状对映射，再跑正式六例。
+已有独立入口时，可将 `CANDIDATE_ADAPTER` 设为其完整命令，例如 `/path/to/engine/bin/benchmark_adapter`。运行器会追加本次试验的请求和输出参数。先检查适配器的状态和形状映射，再运行完整评测清单。
 
 以 WanPhys 作为参评端时，用已安装 WanPhys 的 Python 环境，将 `--adapter` 指向公开的 `adapters/wanphys/adapter.py`。[WanPhys 运行说明](adapters/wanphys/README.md)
 
 ```sh
 uv run --no-sync newton-test run --suite cases/regular6.json --case basic_shapes \
   --reference "$NEWTON_ADAPTER" --candidate "$CANDIDATE_ADAPTER" \
-  --frames 100 --repetitions 1 --duration 2 --performance-repetitions 1 \
+  --repetitions 1 --performance-repetitions 1 \
   --output runs/candidate-smoke
 
 uv run --no-sync newton-test verify runs/candidate-smoke
 ```
 
-首次运行含 `nut_bolt_hydro` 的正式精度前，对上面检出的 Newton 应用随附补丁。正式命令省略短测的覆盖参数，使用清单规定的帧数、时长和重复次数。[Hydro 补丁说明](adapters/newton/README.md#20-world-hydro-的确定性参考)
+首次运行含 `nut_bolt_hydro` 的正式精度前，对上面检出的 Newton 应用随附补丁。正式命令使用清单规定的帧数和重复次数。[Hydro 补丁说明](adapters/newton/README.md#20-world-hydro-的确定性参考)
 
 ```sh
 git -C newton-v1.6.0 apply --check "$PWD/adapters/newton/hydro-v1.6.0.patch"
@@ -116,7 +116,7 @@ uv run --no-sync newton-test verify runs/regular6
 可以用已有轨迹离线复算精度：
 
 ```sh
-uv run --no-sync newton-test compare --suite cases/regular6.json --case basic_shapes --frames 8 \
+uv run --no-sync newton-test compare --suite cases/regular6.json --case basic_shapes \
   --reference runs/newton-smoke/cases/basic_shapes/accuracy/reference/run-1/trajectory.json \
   --candidate runs/newton-smoke/cases/basic_shapes/accuracy/candidate/run-1/trajectory.json
 ```

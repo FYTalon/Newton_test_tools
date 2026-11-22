@@ -9,7 +9,7 @@
       "contact_stage": "end_of_frame"
     },
     "performance": {
-      "duration_seconds": 600,
+      "num_frames": 500,
       "repetitions": 3,
       "warmup_frames": 5,
       "sync_interval_frames": 5,

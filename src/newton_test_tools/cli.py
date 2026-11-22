@@ -28,7 +28,6 @@ def _parser() -> argparse.ArgumentParser:
     execute.add_argument("--reference", required=True, help="Reference adapter command as a single quoted string.")
     execute.add_argument("--candidate", required=True, help="Candidate adapter command as a single quoted string.")
     execute.add_argument("--gpu", default="0", help="NVML device index or UUID used by both engines.")
-    execute.add_argument("--duration", type=float, help="Override wall-clock duration per performance trial.")
     execute.add_argument("--repetitions", type=int, help="Override the number of accuracy runs per engine.")
     execute.add_argument(
         "--performance-repetitions", type=int, help="Override the number of performance trials per engine."
@@ -87,8 +86,6 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({key: report[key] for key in ("x_C", "x_D", "x_K")}, allow_nan=False, indent=2))
             return 0
 
-        if args.duration is not None:
-            suite["protocol"]["performance"]["duration_seconds"] = positive_number(args.duration, "--duration")
         if args.repetitions is not None:
             suite["protocol"]["accuracy"]["repetitions"] = positive_int(args.repetitions, "--repetitions")
         if args.performance_repetitions is not None:

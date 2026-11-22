@@ -177,10 +177,12 @@ def _read_performance(root: Path, case: dict[str, Any], protocol: dict[str, Any]
         if repetitions == 1:
             sides[role] = first
         else:
+            mean_elapsed = fmean(trial["metrics"]["elapsed_seconds"] for trial in trials)
             sides[role] = {
                 "engine": first["engine"],
                 "mean": {
-                    "fps": fmean(trial["metrics"]["fps"] for trial in trials),
+                    "elapsed_seconds": mean_elapsed,
+                    "fps": protocol["num_frames"] / mean_elapsed,
                     "gpu_peak_bytes": fmean(trial["gpu_memory"]["peak_bytes"] for trial in trials),
                 },
                 "trials": trials,
@@ -226,9 +228,9 @@ def _markdown(report: dict[str, Any]) -> str:
         lines.append(f"精度每端采集 {accuracy['num_frames']} 帧，独立运行 {accuracy['repetitions']} 次。")
     if any("performance" in row for row in report["cases"]):
         performance = report["protocol"]["performance"]
-        duration, trials = performance["duration_seconds"], performance.get("repetitions", 1)
-        lines.append(f"性能每端独立运行 {trials} 次，每次目标计时 {duration:g} 秒。")
-        lines.append("FPS 与每次显存峰值分别取算术平均，比值为候选引擎 / 参考引擎。显存单位为 MiB。")
+        trials = performance.get("repetitions", 1)
+        lines.append(f"性能每端独立运行 {trials} 次，每次计时 {performance['num_frames']} 帧。")
+        lines.append("FPS 取各轮计时帧数之和除以总墙钟耗时，显存取各轮峰值的算术平均。显存单位为 MiB。")
     lines.extend(
         [
             "",
