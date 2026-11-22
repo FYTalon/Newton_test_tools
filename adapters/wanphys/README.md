@@ -21,3 +21,5 @@ CANDIDATE_ADAPTER="'$WANPHYS_PY' -m newton_test_tools worker --adapter '$PWD/ada
 
 - 精度在第 0 帧和每个完整帧结束后读取刚体状态，形状对取帧末保留的有效碰撞记录。公开的名称映射将本地编号对齐到 Newton。MuJoCo 在独立状态中通过 FK 重建世界质心速度，采集过程只读求解状态。[读取源码](snapshot.py)
 - 性能使用例子的 `--no-deterministic --graph` 参数。公用 `worker` 在首个预热步检查 graph 重放，由 `Monitor` 调用场景的 `step()` 和设备同步进行计时，运行器通过 NVML 采样显存。报告记录实际参数、solver 模式、重放次数、example 和场景配置哈希。[适配器源码](adapter.py)
+
+扩展套件从 `extended.py` 加载对应的 WanPhys 场景。十万自由度精度通过 `substeps.py` 读取实际子步，隐式 MPM 与 MLS-MPM 沿用场景的诊断数据，TG 涡用例提供 `create_tgv_scene` 的整帧步进与动能读数。各组的精度采样周期和性能参数由扩展清单指定。[扩展适配器](extended.py) · [扩展清单](../../cases/extended.json)

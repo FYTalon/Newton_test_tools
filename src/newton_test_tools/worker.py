@@ -12,6 +12,7 @@ from types import ModuleType
 from typing import Any
 from unittest.mock import patch
 
+from .diagnostics import Diagnostic
 from .monitor import MonitorConfig, Observation, run_trial
 from .protocol import read_request
 
@@ -28,6 +29,7 @@ class Trial:
     observe: Observation | None = None
     warp_graphs: Callable[[], tuple[Any, ...]] | None = None
     check_final: Callable[[], None] | None = None
+    diagnostic: Diagnostic | None = None
 
 
 def _load_adapter(reference: str) -> ModuleType:
@@ -104,4 +106,5 @@ def run_worker(adapter: str, request_path: Path, output: Path) -> None:
             observe=trial.observe,
             first_warmup_step=first_warmup_step,
             check_final=check_final,
+            diagnostic=trial.diagnostic,
         )

@@ -11,10 +11,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .diagnostics import Diagnostic, record_samples
 from .protocol import (
     RESULT_FORMAT,
     TRACE_FORMAT,
     check_runtime,
+    metric_kind,
     positive_int,
     positive_number,
     validate_trace,
@@ -69,9 +71,7 @@ class Monitor:
         if exc_type is not None:
             return
         case, protocol = self.request["case"], self.request["protocol"]
-        if self.request["mode"] == "accuracy":
-            if self._trace is None:
-                raise RuntimeError("call start before recording a trajectory")
+        if self._trace is not None:
             validate_trace(self._trace, case, protocol["num_frames"])
             write_json(self.output / "trajectory.json", self._trace, compact=True)
             self._metrics = {
@@ -79,7 +79,7 @@ class Monitor:
                 "simulation_seconds": protocol["num_frames"] * case["frame_dt_seconds"],
             }
         if self._metrics is None:
-            raise RuntimeError("the adapter did not report a performance measurement")
+            raise RuntimeError("the adapter did not record a trajectory or performance measurement")
         self.report = {
             "format": RESULT_FORMAT,
             "engine": self.config.engine,
@@ -161,7 +161,7 @@ class Monitor:
     def measure(
         self, step: Callable[[], None], *, first_warmup_step: Callable[[], None] | None = None
     ) -> dict[str, Any]:
-        """Run the requested warmup and time complete synchronized frame batches."""
+        """Warm up and time synchronized frame batches up to the requested limit."""
 
         if self.request["mode"] != "performance" or self._metrics is not None:
             raise RuntimeError("measure is used once per performance run")
@@ -171,16 +171,23 @@ class Monitor:
             (first_warmup_step if frame == 0 and first_warmup_step is not None else step)()
         if synchronize is not None:
             synchronize()
-        frame_count = protocol["num_frames"]
+        timed_frames, elapsed = 0, 0.0
         batch_frames = protocol["sync_interval_frames"]
-        start = time.perf_counter()
-        for batch_start in range(0, frame_count, batch_frames):
-            count = min(batch_frames, frame_count - batch_start)
-            for _ in range(count):
+        target_frames = protocol.get("num_frames")
+        target_seconds = protocol.get("duration_seconds", math.inf)
+        start = time.monotonic_ns()
+        while elapsed < target_seconds and (target_frames is None or timed_frames < target_frames):
+            frames = batch_frames if target_frames is None else min(batch_frames, target_frames - timed_frames)
+            for _ in range(frames):
                 step()
             if synchronize is not None:
                 synchronize()
-        return self.record_performance(frame_count, time.perf_counter() - start)
+            timed_frames += frames
+            end = time.monotonic_ns()
+            elapsed = (end - start) / 1e9
+        metrics = self.record_performance(timed_frames, elapsed)
+        metrics["timing_window"] = {"start_ns": start, "end_ns": end}
+        return metrics
 
     def record_performance(self, timed_frames: int, elapsed_seconds: float) -> dict[str, Any]:
         """Publish raw counters from an existing timing loop using this protocol."""
@@ -189,6 +196,18 @@ class Monitor:
             raise RuntimeError("record_performance is used once per performance run")
         self._metrics = performance_metrics(self.request, timed_frames, elapsed_seconds)
         return self._metrics
+
+    def record_diagnostic(self, capture: Diagnostic, step: Callable[[], None]) -> None:
+        """Record binary physics samples for a non-rigid-pair accuracy case."""
+        case, protocol = self.request["case"], self.request["protocol"]
+        if self.request["mode"] != "accuracy" or self._metrics is not None or self._trace is not None:
+            raise RuntimeError("record_diagnostic is used once per accuracy run")
+        frames = protocol["num_frames"]
+        count = case["substeps"] if metric_kind(case) == "conservation" else 1
+        if (capture.substeps is not None) != (metric_kind(case) == "conservation"):
+            raise ValueError("capture cadence differs from the case")
+        record_samples(self.output, capture, frames=frames, substeps=count, step=step, synchronize=self._sync)
+        self._metrics = {"completed_frames": frames, "simulation_seconds": frames * case["frame_dt_seconds"]}
 
 
 def run_trial(
@@ -203,6 +222,7 @@ def run_trial(
     observe: Observation | None = None,
     first_warmup_step: Callable[[], None] | None = None,
     check_final: Callable[[], None] | None = None,
+    diagnostic: Diagnostic | None = None,
 ) -> None:
     """Drive a configured engine for one accuracy or performance trial.
 
@@ -218,7 +238,11 @@ def run_trial(
         synchronize=synchronize,
         observe=observe if accuracy else None,
     ) as monitor:
-        if accuracy:
+        if accuracy and metric_kind(request["case"]) != "rigid":
+            if diagnostic is None:
+                raise ValueError("this accuracy case requires a diagnostic sampler")
+            monitor.record_diagnostic(diagnostic, step)
+        elif accuracy:
             if read_initial is None or observe is None:
                 raise ValueError("accuracy requires initial-state and frame readers")
             if synchronize is not None:
@@ -237,8 +261,12 @@ def run_trial(
 def performance_metrics(request: dict[str, Any], timed_frames: int, elapsed_seconds: float) -> dict[str, Any]:
     timed_frames = positive_int(timed_frames, "timed_frames")
     elapsed_seconds = positive_number(elapsed_seconds, "elapsed_seconds")
-    if timed_frames != request["protocol"]["num_frames"]:
-        raise ValueError("timed frame count differs from the requested performance frame count")
+    protocol = request["protocol"]
+    if "num_frames" in protocol:
+        if timed_frames != protocol["num_frames"]:
+            raise ValueError(f"timed frame count {timed_frames} differs from the requested {protocol['num_frames']}")
+    elif elapsed_seconds < protocol["duration_seconds"] or timed_frames % protocol["sync_interval_frames"]:
+        raise ValueError("incomplete timed duration or incomplete synchronization batch")
     simulation_seconds = timed_frames * request["case"]["frame_dt_seconds"]
     return {
         "timed_frames": timed_frames,

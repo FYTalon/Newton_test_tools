@@ -8,7 +8,7 @@ import shlex
 import sys
 from pathlib import Path
 
-from .protocol import load_suite, positive_int, positive_number, read_json, write_json
+from .protocol import case_protocol, load_suite, metric_kind, positive_int, positive_number, read_json, write_json
 from .runner import compare_trajectories, run, verify
 from .worker import run_worker
 
@@ -25,9 +25,14 @@ def _parser() -> argparse.ArgumentParser:
     execute = commands.add_parser("run", help="Run reference and candidate adapters.")
     _add_case_arguments(execute, repeatable=True)
     execute.add_argument("--mode", choices=("all", "accuracy", "performance"), default="all")
-    execute.add_argument("--reference", required=True, help="Reference adapter command as a single quoted string.")
+    execute.add_argument("--reference", help="Reference adapter command as a single quoted string.")
     execute.add_argument("--candidate", required=True, help="Candidate adapter command as a single quoted string.")
     execute.add_argument("--gpu", default="0", help="NVML device index or UUID used by both engines.")
+    performance_length = execute.add_mutually_exclusive_group()
+    performance_length.add_argument("--duration", type=float, help="Set the wall-clock duration per performance trial.")
+    performance_length.add_argument(
+        "--performance-frames", type=int, help="Time exactly this many frames per performance trial, after warmup."
+    )
     execute.add_argument("--repetitions", type=int, help="Override the number of accuracy runs per engine.")
     execute.add_argument(
         "--performance-repetitions", type=int, help="Override the number of performance trials per engine."
@@ -73,31 +78,41 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         suite = load_suite(args.suite)
-        if args.frames is not None:
-            suite["protocol"]["accuracy"]["num_frames"] = positive_int(args.frames, "--frames")
-        frames = suite["protocol"]["accuracy"]["num_frames"]
         cases = {case["id"]: case for case in suite["cases"]}
+        overrides: dict = {"accuracy": {}, "performance": {}}
+        if args.frames is not None:
+            overrides["accuracy"]["num_frames"] = positive_int(args.frames, "--frames")
         if args.command == "compare":
-            report = compare_trajectories(
-                cases[args.case], frames, read_json(args.candidate), read_json(args.reference)
-            )
+            case = cases[args.case]
+            if metric_kind(case) != "rigid":
+                raise ValueError("use verify to recompute an extended-case run")
+            frames = case_protocol({**suite, "overrides": overrides}, case, "accuracy")["num_frames"]
+            report = compare_trajectories(case, frames, read_json(args.candidate), read_json(args.reference))
             if args.output is not None:
                 write_json(args.output, report)
             print(json.dumps({key: report[key] for key in ("x_C", "x_D", "x_K")}, allow_nan=False, indent=2))
             return 0
 
+        performance = overrides["performance"]
+        if args.duration is not None:
+            performance["duration_seconds"] = positive_number(args.duration, "--duration")
+        elif args.performance_frames is not None:
+            performance["num_frames"] = positive_int(args.performance_frames, "--performance-frames")
         if args.repetitions is not None:
-            suite["protocol"]["accuracy"]["repetitions"] = positive_int(args.repetitions, "--repetitions")
+            overrides["accuracy"]["repetitions"] = positive_int(args.repetitions, "--repetitions")
         if args.performance_repetitions is not None:
-            suite["protocol"]["performance"]["repetitions"] = positive_int(
-                args.performance_repetitions, "--performance-repetitions"
-            )
+            performance["repetitions"] = positive_int(args.performance_repetitions, "--performance-repetitions")
         modes = ["accuracy", "performance"] if args.mode == "all" else [args.mode]
         requested_cases = args.case or list(cases)
         if len(requested_cases) != len(set(requested_cases)):
             raise ValueError("each --case can appear only once")
-        plan = {**suite, "modes": modes, "cases": [cases[name] for name in requested_cases]}
-        commands = {role: shlex.split(getattr(args, role)) for role in ("reference", "candidate")}
+        selected = [cases[name] for name in requested_cases]
+        plan = {**suite, "modes": modes, "cases": selected, "overrides": overrides}
+        commands = {"candidate": shlex.split(args.candidate)}
+        if any(metric_kind(case) != "tgv" for case in selected):
+            if args.reference is None:
+                raise ValueError("a Newton reference adapter command is required for the selected cases")
+            commands["reference"] = shlex.split(args.reference)
         if not all(commands.values()):
             raise ValueError("adapter command must not be empty")
         result = run(args.output, plan, commands, args.gpu, positive_number(args.timeout, "--timeout"))

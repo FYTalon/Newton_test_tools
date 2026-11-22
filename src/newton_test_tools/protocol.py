@@ -20,6 +20,27 @@ FLOOR_FIELDS: tuple[str, ...] = (
     "linear_velocity_mps",
     "angular_velocity_radps",
 )
+METRICS: frozenset[str] = frozenset({"rigid", "conservation", "particles", "pressure_cube", "volume", "tgv"})
+
+
+def metric_kind(case: dict[str, Any]) -> str:
+    return case.get("metric", "rigid")
+
+
+def reference_case(case: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a case's shared reference configuration, if any."""
+    overrides = case.get("reference", {})
+    return {key: value for key, value in {**case, **overrides}.items() if key != "reference"}
+
+
+def case_protocol(plan: dict[str, Any], case: dict[str, Any], mode: str) -> dict[str, Any]:
+    protocol = {**plan["protocol"][mode], **case.get("protocol", {}).get(mode, {})}
+    overrides = plan.get("overrides", {}).get(mode, {})
+    if "num_frames" in overrides:
+        protocol.pop("duration_seconds", None)
+    elif "duration_seconds" in overrides:
+        protocol.pop("num_frames", None)
+    return {**protocol, **overrides}
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -51,6 +72,20 @@ def positive_number(value: Any, label: str) -> float:
     return float(value)
 
 
+def particle_error_scales(case: dict[str, Any]) -> dict[str, float] | None:
+    config = case.get("particle_error_scales")
+    if config is None:
+        return None
+    dimensions = config["scene_dimensions_m"]
+    if not isinstance(dimensions, list) or len(dimensions) != 3:
+        raise ValueError("scene_dimensions_m must contain three dimensions")
+    shortest_side = min(positive_number(value, "scene_dimensions_m") for value in dimensions)
+    return {
+        field: positive_number(config.get(field, shortest_side), field)
+        for field in ("position_m", "linear_velocity_mps")
+    }
+
+
 def _name(value: Any, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{label} must be a nonempty string")
@@ -66,8 +101,29 @@ def _check_case(case: dict[str, Any]) -> str:
     positive_int(case["world_count"], "world_count")
     for field in ("solver", "collision"):
         _name(case[field], field)
-    for field in FLOOR_FIELDS:
-        positive_number(case["normalization_floor"][field], field)
+    kind = metric_kind(case)
+    if kind not in METRICS:
+        raise ValueError(f"unsupported accuracy metric {kind!r}")
+    if kind == "rigid":
+        for field in FLOOR_FIELDS:
+            positive_number(case["normalization_floor"][field], field)
+    if kind == "conservation":
+        positive_number(case["length_m"], "length_m")
+        positive_number(case["velocity_mps"], "velocity_mps")
+        if type(case["free_fall"]) is not bool:
+            raise ValueError("free_fall must be a Boolean")
+    if kind == "particles":
+        particle_error_scales(case)
+    if kind == "tgv":
+        positive_number(case["baseline"]["fps"], "baseline FPS")
+        positive_int(case["baseline"]["gpu_peak_bytes"], "baseline GPU peak bytes")
+    if "reference" in case:
+        resolved = reference_case(case)
+        _check_case(resolved)
+        if kind != "volume" or metric_kind(resolved) != "pressure_cube":
+            raise ValueError("only coupled MPM volume can share a pressure/cube reference")
+        if resolved["id"] == case_id or resolved["frame_dt_seconds"] != case["frame_dt_seconds"]:
+            raise ValueError("shared references must have distinct case IDs and identical frame intervals")
     return case_id
 
 
@@ -78,10 +134,15 @@ def _check_protocol(mode: str, config: dict[str, Any]) -> None:
     if mode == "accuracy":
         positive_int(config["num_frames"], "num_frames")
         positive_int(config["repetitions"], "repetitions")
-        if config["contact_stage"] != "end_of_frame":
-            raise ValueError("v1 requires end_of_frame contacts")
+        if config["contact_stage"] not in ("end_of_frame", "end_of_substep"):
+            raise ValueError("unknown contact sampling stage")
     elif mode == "performance":
-        positive_int(config["num_frames"], "performance.num_frames")
+        if ("duration_seconds" in config) == ("num_frames" in config):
+            raise ValueError("performance requires exactly one of duration_seconds and num_frames")
+        if "num_frames" in config:
+            positive_int(config["num_frames"], "performance.num_frames")
+        else:
+            positive_number(config["duration_seconds"], "duration_seconds")
         positive_int(config.get("repetitions", 1), "performance.repetitions")
         positive_number(config["memory_sample_interval_ms"], "memory_sample_interval_ms")
         positive_int(config["warmup_frames"], "warmup_frames", minimum=0)
@@ -96,6 +157,9 @@ def load_suite(path: Path) -> dict[str, Any]:
         raise ValueError("unsupported benchmark suite version")
     for mode in ("accuracy", "performance"):
         _check_protocol(mode, suite["protocol"][mode])
+        for case in suite["cases"]:
+            _check_protocol(mode, case_protocol(suite, case, mode))
+            _check_protocol(mode, case_protocol(suite, reference_case(case), mode))
     case_ids = [_check_case(case) for case in suite["cases"]]
     if not case_ids or len(set(case_ids)) != len(case_ids):
         raise ValueError("suite must contain distinct case IDs")
@@ -110,6 +174,10 @@ def read_request(path: Path) -> dict[str, Any]:
         raise ValueError("unsupported adapter request version")
     _check_case(request["case"])
     _check_protocol(request["mode"], request["protocol"])
+    if request["mode"] == "accuracy":
+        step = "end_of_substep" if metric_kind(request["case"]) == "conservation" else "end_of_frame"
+        if request["protocol"]["contact_stage"] != step:
+            raise ValueError("contact sampling stage differs from the case")
     if not isinstance(request["gpu_devices"], list) or len(request["gpu_devices"]) != 1:
         raise ValueError("v1 requests select one GPU")
     _name(request["gpu_devices"][0], "GPU selector")

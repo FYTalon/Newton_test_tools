@@ -164,6 +164,12 @@ def _adapt_scene(
 
 @contextmanager
 def prepare_trial(request: dict[str, Any], *, output: Path) -> Iterator[Trial]:
+    if request["case"].get("metric", "rigid") != "rigid":
+        from .extended import prepare_trial as prepare_extended
+
+        with prepare_extended(request, output=output) as trial:
+            yield trial
+        return
     case = request["case"]
     spec = read_json(_SCENES).get(case["id"])
     if spec is None or spec["solver"] != case["solver"]:

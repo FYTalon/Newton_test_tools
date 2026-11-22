@@ -160,6 +160,12 @@ def _adapt_scene(
 def prepare_trial(request: dict[str, Any], *, output: Path) -> Iterator[Trial]:
     if newton.__version__ != "1.6.0" or wp.__version__ != "1.17.0":
         raise RuntimeError("this reference adapter expects Newton 1.6.0 and Warp 1.17.0")
+    if request["case"].get("metric", "rigid") != "rigid":
+        from .extended import prepare_trial as prepare_extended
+
+        with prepare_extended(request, output=output) as trial:
+            yield trial
+        return
     module = f"newton.examples.{_MODULES[request['case']['id']]}"
     spec = importlib.util.find_spec(module)
     if spec is None or not spec.origin:

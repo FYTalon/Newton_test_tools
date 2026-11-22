@@ -49,10 +49,11 @@ python -m newton_test_tools worker --adapter /path/adapter.py \
 | --- | --- |
 | `format` | `sim-bench-request-v1` |
 | `mode` | `accuracy` 或 `performance` |
-| `case` | 清单中的场景对象，包含 `id`、`solver`、`collision`、`world_count`、`frame_dt_seconds`、`substeps` 及 `normalization_floor` |
-| `protocol` | 本次运行使用的设置，字段见[六例清单](../cases/regular6.json)。精度采样阶段固定为 `end_of_frame` |
+| `case` | 清单中的场景对象，包含 `id`、`solver`、`collision`、`world_count`、`frame_dt_seconds` 和 `substeps`。常规刚体还提供 `normalization_floor`，扩展场景通过 `metric` 选择采样字段 |
+| `protocol` | 本次运行使用的设置，字段见[六例清单](../cases/regular6.json)。常规精度用 `end_of_frame`，十万自由度用 `end_of_substep` |
 | `gpu_devices` | 单元素数组，元素为 NVML 设备索引字符串或 GPU UUID |
-| `reference_identity` | 首次参考精度运行结束后提供的标识表，含 `format: sim-bench-identity-v1`、`bodies` 和 `shapes`。首次参考精度运行及性能运行的值为 `null` |
+| `reference_identity` | 常规刚体首次参考精度运行结束后提供的标识表，含 `format: sim-bench-identity-v1`、`bodies` 和 `shapes`。首次参考精度运行及性能运行的值为 `null` |
+| `reference_snapshot` | MLS-MPM 请求提供的同轮 Newton 初态 `.npz` 路径 |
 
 适配器在创建场景和求解器前按 `protocol.deterministic` 与 `protocol.graph` 设置对应的引擎选项，并在创建完成后核验实际配置。对于 Newton，设置包括求解器模式、外部碰撞排序和 graph 构建。其他引擎按自身接口实现对应设置。
 
@@ -87,10 +88,35 @@ python -m newton_test_tools worker --adapter /path/adapter.py \
 
 ## 性能数据
 
-工具用 `protocol.warmup_frames` 预热，同步设备后开始墙钟计时。每轮计时 `protocol.num_frames` 帧，每满 `sync_interval_frames` 帧同步一次，最后一批不足时也同步。预热沿用 example 的正常步进。计时段关闭渲染、逐帧接触和状态导出。性能报告的 `metrics.timed_frames` 和 `metrics.elapsed_seconds` 是原始计数，由运行器复算 FPS。RTF 定义为墙钟时间 / 仿真时间，作为补充信息。
+工具用 `protocol.warmup_frames` 预热，先同步设备再开始单次连续墙钟计时，之后每满 `sync_interval_frames` 帧同步一次。性能请求用 `duration_seconds` 指定目标时长，或用 `num_frames` 指定准确的计时帧数。固定帧数模式在最后一批同步后结束，尾批可少于同步间隔。预热沿用 example 的正常步进。计时段关闭渲染、逐帧接触和状态导出。性能报告的 `metrics.timed_frames` 和 `metrics.elapsed_seconds` 是原始计数，由运行器复算 FPS。RTF 定义为墙钟时间 / 仿真时间，作为补充信息。
 
-运行器另写 `gpu-memory.json`，记录对应 GPU UUID、驱动、字节峰值、有效采样数和间隔。显存峰值包含建场景、graph 创建、预热和正式运行期间观测到的进程驻留量。NVML 查询间隔之间的瞬时分配可能没被捕获。若设备或场景规模核对失败，保留单端原始值，配对比值为空并给出原因。
+运行器另写 `gpu-memory.json`，记录对应 GPU UUID、驱动、字节峰值、有效采样数、间隔和采样序列。使用 `Monitor.measure` 时，采样窗口由预热后的 GPU 同步与最后一帧后的 GPU 同步确定，计入正式运行期间仍驻留的初始化分配和缓存。缺少计时窗口或窗口内无采样点时，以 `scope: process` 标明全进程口径。NVML 查询间隔之间的瞬时分配可能没被捕获。若设备或场景规模核对失败，保留单端原始值，配对比值为空并给出原因。
 
-性能重复次数由 `protocol.repetitions` 指定，适配器每次启动执行一次计时。常规六例每端为 3 次，每次计时 500 帧。每次的报告和 NVML 峰值保存在 `run-N`，汇总 JSON 的 `trials` 保留各次原始值。汇总 FPS 为各轮总帧数除以总墙钟耗时，`mean.elapsed_seconds` 记录单轮平均耗时。显存取各轮峰值的算术平均，两个比值均用候选端结果除以参考端结果。
+性能重复次数由 `protocol.repetitions` 指定，适配器每次启动执行一次计时。常规六例每端默认 3 次，每次计时 500 帧。每次的报告和 NVML 峰值保存在 `run-N`，汇总 JSON 的 `trials` 保留各次原始值，`mean` 中的 FPS 为各轮总帧数除以总耗时，显存为各轮峰值的算术平均。FPS 比和显存比用候选端与参考端对应结果相除。旧清单省略重复次数时按一次处理。
 
 每次场景步进算一帧，多 world 并行也按场景帧计数。相对 SiMonitor 的单端监控，这里的公用协议补充了配对运行、轨迹与碰撞形状对、参考标识映射，以及精度、FPS 和显存比。性能显存采用外部进程轮询。
+
+
+## 扩展场景采集
+
+扩展场景在 `Trial.diagnostic` 提供 `Diagnostic(model, initial, frame=...)` 或 `Diagnostic(model, initial, substeps=...)`。三个读数函数返回由 NumPy 数组或标量组成的字典。工具把模型写入 `model.npz`，把初态和每个样本顺次写入 `samples/000000.npz` 等文件。公用工具负责循环、核对步数、计算指标和保存报告。适配器用自己的引擎提供读数。
+
+十万自由度的 `substeps` 是一个接收 `record(sample)` 的上下文管理器。进入时挂上求解器观察器，退出时卸载。每个物理子步恰好回调一次。刚体状态取子步推进后的动态刚体位姿和速度。接触距离、法向与力取自该子步所用的接触流形。法向压缩力统一为正。XPBD 用碰撞阶段的局部接触点恢复有符号距离，再读取求解后的接触力。MuJoCo 用实际送入求解的接触距离、接触帧和约束力重构法向力。在性能模式只调用完整帧 `step()`。
+
+| `case.metric` | `model()` 和样本字段 |
+| --- | --- |
+| `conservation` | 模型提供动态刚体的 `mass`、`com_body`、`inertia_body`、`gravity`、`velocity_convention` 和 `effective_dof`。样本提供 `body_q`、`body_qd`、`contact_distance_m`、`normal_compression_N`，有接触时需同时提供同序的 `contact_world`、`shape0`、`shape1`、`contact_point_m`、`contact_normal` 和 `contact_force_N`。初态接触数组为空 |
+| `particles` | 模型提供 FP32 `mass`，逐帧样本提供 FP32 `particle_q`、`particle_qd`，粒子顺序与封存参考一致 |
+| `pressure_cube` | 模型提供粒子初态 SHA-256、总质量、诊断网格和压强方法标识及初始质心。逐帧样本含 `frame`、`time_end_s`、32×32 `floor_pressure_pa`（干格为 NaN）和 `cube_center_m`。使用 `coupled_summary` 的清单还需同网格的 `floor_contact_impulse_ns` 与 `floor_boundary_correction_impulse_ns`。Newton 端同时输出体积字段 |
+| `volume` | 模型提供同样的粒子初态、质量与诊断网格元数据及体积方法标识。逐帧样本含 `frame`、`time_end_s`、`volume_ratio`、`initial_effective_volume_m3` 和 `nonfinite_count` |
+| `tgv` | 初态与帧末提供参考单位下的标量 `energy`，另外记录求解配置。参考谱随运行副本保存 |
+
+`pressure_cube` 和 `volume` 的参考请求使用同一个场景 ID。由 Newton 写出 `initial_snapshot.npz` 后，运行器把同轮快照的路径作为 `reference_snapshot` 传给 MLS-MPM。
+
+压强由每格法向接触冲量及边界速度修正冲量之和除以采样格面积 0.01 m² 和帧间隔得到。对每帧两端共同有水的格点，逐格计算压强绝对差，累计全程后除以同一批格点的 Newton 压强绝对值之和。干湿掩码差异另外记录。立方体质心误差按每帧 Newton 质心距初始位置的位移归一化，再对有效帧取均值。版本二分别报告各端相对初始 CIC 有效体积的平均损失，报告保留逐帧有效体积和体积比。
+
+守恒指标采用总线动量相对初值的最大归一化变化。自由下落取首次有效接触前的机械能偏差。穿透对全程满足 `d<0` 的接触点等权平均。负法向力取全程最大值。两端共享由 Newton 初态和清单固定参考长度、速度推得的尺度。比值排除 Newton 对应归一化值绝对值不超过 0.001 的项。
+
+每端的 `events.jsonl` 按 world 和无序形状对记录连续的有效接触事件。起点取首次接触前的状态，终点取该对首次失去接触后的状态，记录全场动量、质心角动量和机械能的变化及事件内的穿透和负法向力峰值。持续到轨迹结束的事件仅记录起点及接触统计。
+
+TG 涡按 `t*=0,0.01,…,19.99` 对齐已有谱参考。由模拟动能曲线差分求耗散率，首点用前向差分、其余时刻用中心差分，参考耗散率取谱文件第三列。先算两个相对 L2 误差，再取算术平均。公开工具的 `verify` 从记录复算这些指标。

@@ -48,3 +48,10 @@ git -C "$NEWTON_SRC" apply "$PWD/adapters/newton/hydro-v1.6.0.patch"
 ```
 
 这项结果标注为“Newton v1.6.0 + Hydro 确定性容量补丁”。其余五例及六例的非确定性性能可直接使用官方 v1.6.0。
+
+
+## 扩展场景参考
+
+`cases/extended.json` 的纯流体溃坝使用官方 `newton/examples/mpm/example_mpm_water_dam_break.py`。两个十万自由度场景和流固耦合按测试方封存的补充场景执行。参考环境需提供 `newton.examples.basic.example_basic_shapes_100k`、`newton.examples.robot.example_anymal_c_walk_5560` 和 `newton.examples.mpm.example_mpm_water_dam_single_box`，并带齐其引用的布局、策略与诊断文件。当前 WanPhys 工作区内的 Newton 参考树已包含这些入口，可在相同的评测环境直接调用。
+
+扩展参考适配器读取冻结场景的状态及接触数据，由工具执行步进和统计。流固耦合仅构建一个 Newton 物理配置，分别采集压强、质心与体积，供两种参评实现复用。TG 涡使用固定谱参考、30 FPS 与 6144 MiB 基准。
