@@ -105,13 +105,19 @@ def _check_case(case: dict[str, Any]) -> str:
     if kind not in METRICS:
         raise ValueError(f"unsupported accuracy metric {kind!r}")
     if kind == "rigid":
-        for field in FLOOR_FIELDS:
+        scales = case.get("kinematic_scales")
+        for field in FLOOR_FIELDS if scales is None else FLOOR_FIELDS[:2]:
             positive_number(case["normalization_floor"][field], field)
+        if scales is not None:
+            for field in FLOOR_FIELDS[2:]:
+                positive_number(scales[field], f"kinematic_scales.{field}")
     if kind == "conservation":
         positive_number(case["length_m"], "length_m")
         positive_number(case["velocity_mps"], "velocity_mps")
         if type(case["free_fall"]) is not bool:
             raise ValueError("free_fall must be a Boolean")
+        if case.get("energy_scope", "free_fall") not in ("free_fall", "full_trajectory"):
+            raise ValueError("conservation energy_scope must be free_fall or full_trajectory")
     if kind == "particles":
         particle_error_scales(case)
     if kind == "tgv":
@@ -147,6 +153,8 @@ def _check_protocol(mode: str, config: dict[str, Any]) -> None:
         positive_number(config["memory_sample_interval_ms"], "memory_sample_interval_ms")
         positive_int(config["warmup_frames"], "warmup_frames", minimum=0)
         positive_int(config["sync_interval_frames"], "sync_interval_frames")
+        if type(config.get("require_timed_memory", False)) is not bool:
+            raise ValueError("performance.require_timed_memory must be a boolean")
     else:
         raise ValueError(f"unknown benchmark mode {mode!r}")
 

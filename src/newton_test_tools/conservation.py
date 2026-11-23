@@ -6,6 +6,7 @@ import json
 import math
 from contextlib import ExitStack
 from pathlib import Path
+from statistics import fmean
 from typing import Any, TextIO
 
 import numpy as np
@@ -13,8 +14,11 @@ import numpy as np
 from .accuracy import _rotation
 from .diagnostics import Sample, load_sample
 
+_NEWTON_DENOMINATOR_FLOOR = 0.001
+_RATIO_LIMIT = 1.05
 
-def _totals(model: Sample, sample: Sample) -> dict[str, Any]:
+
+def _totals(model: Sample, sample: Sample, *, mass_properties: bool = False) -> dict[str, Any]:
     q, qd = (np.asarray(sample[key], dtype=np.float64) for key in ("body_q", "body_qd"))
     mass = model["mass"].astype(np.float64)
     if q.shape != (len(mass), 7) or qd.shape != (len(mass), 6):
@@ -28,14 +32,17 @@ def _totals(model: Sample, sample: Sample) -> dict[str, Any]:
     velocity = qd[:, :3]
     if str(model["velocity_convention"]) == "origin_world":
         velocity = velocity + np.cross(omega, offset)
-    center = np.sum(mass[:, None] * position, axis=0) / mass.sum()
+    total_mass = mass.sum()
+    center = np.sum(mass[:, None] * position, axis=0) / total_mass
     particle_momentum = mass[:, None] * velocity
     momentum = particle_momentum.sum(axis=0)
     spin = np.einsum("nij,njk,nlk,nl->ni", rotation, model["inertia_body"], rotation, omega, optimize=True)
-    angular = np.sum(np.cross(position - center, particle_momentum) + spin, axis=0)
+    relative = position - center
+    angular_momentum = np.cross(relative, particle_momentum) + spin
+    angular = np.sum(angular_momentum, axis=0)
     kinetic = 0.5 * float(np.sum(velocity * particle_momentum) + np.sum(omega * spin))
     potential = -float(np.sum(mass * np.einsum("ni,i->n", position, model["gravity"])))
-    return {
+    totals = {
         "P": momentum,
         "H_com": angular,
         "K": kinetic,
@@ -43,9 +50,21 @@ def _totals(model: Sample, sample: Sample) -> dict[str, Any]:
         "E": kinetic + potential,
         "initial_momentum_norm_sum": float(np.linalg.norm(particle_momentum, axis=1).sum()),
     }
+    if mass_properties:
+        inertia = np.einsum("nij,njk,nlk->il", rotation, model["inertia_body"], rotation, optimize=True)
+        second_moment = np.einsum("i,ij,ik->jk", mass, relative, relative)
+        relative_momentum = mass[:, None] * (velocity - momentum / total_mass)
+        com_angular_momentum = np.cross(relative, relative_momentum) + spin
+        totals.update(
+            total_mass_kg=float(total_mass),
+            center_of_mass_m=center.tolist(),
+            world_inertia_com_kg_m2=(inertia + np.trace(second_moment) * np.eye(3) - second_moment).tolist(),
+            initial_angular_momentum_norm_sum=float(np.linalg.norm(com_angular_momentum, axis=1).sum()),
+        )
+    return totals
 
 
-def _setup(folder: Path) -> tuple[Sample, dict[str, Any]]:
+def _setup(folder: Path, *, mass_properties: bool = False) -> tuple[Sample, dict[str, Any]]:
     model = load_sample(folder)
     mass = model["mass"]
     for key, shape in (
@@ -58,7 +77,7 @@ def _setup(folder: Path) -> tuple[Sample, dict[str, Any]]:
             raise ValueError(f"invalid conservation model field {key}")
     if not len(mass) or np.any(mass <= 0) or str(model["velocity_convention"]) not in ("origin_world", "com_world"):
         raise ValueError("conservation requires dynamic bodies and a known velocity convention")
-    return model, _totals(model, load_sample(folder, 0))
+    return model, _totals(model, load_sample(folder, 0), mass_properties=mass_properties)
 
 
 def _write_event(
@@ -85,14 +104,17 @@ def _write_event(
     if end is not None:
         before, after = rows[start - 1], rows[end]
         delta_p = np.subtract(after["P"], before["P"])
+        delta_h = np.subtract(after["H_com"], before["H_com"])
         delta_e = after["E"] - before["E"]
         result.update(
             delta_P=delta_p.tolist(),
-            delta_H_com=np.subtract(after["H_com"], before["H_com"]).tolist(),
+            delta_H_com=delta_h.tolist(),
             delta_E_J=delta_e,
             normalized_delta_P=float(np.linalg.norm(delta_p)) / scales["P_ref"],
             normalized_delta_E=delta_e / scales["E_ref"],
         )
+        if "H_ref" in scales:
+            result["normalized_delta_H_com"] = float(np.linalg.norm(delta_h)) / scales["H_ref"]
     stream.write(json.dumps(result, separators=(",", ":"), allow_nan=False) + "\n")
 
 
@@ -139,11 +161,12 @@ def _summarize(
     peak_free_fall = None
     penetration_sum, penetrating_count = 0.0, 0
     free_fall = case["free_fall"]
+    mass_properties = case.get("energy_scope") == "full_trajectory"
     rows = []
     active_events: dict[tuple[int, int, int], tuple[int, float, float]] = {}
     for index in range(frames * substeps + 1):
         sample = load_sample(folder, index)
-        totals = initial if index == 0 else _totals(model, sample)
+        totals = initial if index == 0 else _totals(model, sample, mass_properties=mass_properties)
         distance, normal_force = sample["contact_distance_m"], sample["normal_compression_N"]
         if (
             distance.ndim != 1
@@ -179,6 +202,9 @@ def _summarize(
                 "negative_normal_peak_N": negative,
             }
         )
+        if mass_properties:
+            for key in ("total_mass_kg", "center_of_mass_m", "world_inertia_com_kg_m2"):
+                rows[-1][key] = totals[key]
         if index and event_stream is not None:
             _observe_events(event_stream, active_events, sample, rows, scales)
     if event_stream is not None:
@@ -203,8 +229,9 @@ def _summarize(
 def compare_conservation(
     candidate: Path, reference: Path, case: dict[str, Any], frames: int, *, save_event_details: bool = False
 ) -> dict[str, Any]:
-    baseline, initial = _setup(reference)
-    actual, actual_initial = _setup(candidate)
+    full_trajectory = case.get("energy_scope") == "full_trajectory"
+    baseline, initial = _setup(reference, mass_properties=full_trajectory)
+    actual, actual_initial = _setup(candidate, mass_properties=full_trajectory)
     if int(actual["effective_dof"]) != int(baseline["effective_dof"]) or not np.array_equal(
         actual["gravity"], baseline["gravity"]
     ):
@@ -222,6 +249,8 @@ def compare_conservation(
         "P_ref": max(initial["initial_momentum_norm_sum"], mass * speed),
         "E_ref": max(initial["K"], gravity_force * length, 0.5 * mass * speed**2),
     }
+    if full_trajectory:
+        scales["H_ref"] = max(initial["initial_angular_momentum_norm_sum"], mass * length * speed)
     with ExitStack() as stack:
         reports = []
         for folder, model, start in ((candidate, actual, actual_initial), (reference, baseline, initial)):
@@ -232,18 +261,54 @@ def compare_conservation(
             )
             reports.append(_summarize(folder, model, start, case, frames, scales, stream))
         a, b = reports
-    metrics = ("R_P_max", "free_fall_R_E_max", "mean_penetration_over_length", "negative_normal_peak_over_force")
-    ratios = {}
-    for name in metrics:
-        n, w = b[name], a[name]
-        ratios[name] = w / n if n is not None and abs(n) > 0.001 and w is not None else None
-    return {
+    energy = "R_E_max" if full_trajectory else "free_fall_R_E_max"
+    fields = ("R_P_max", energy, "mean_penetration_over_length", "negative_normal_peak_over_force")
+    ratios = _ratios(a, b, fields)
+    result = {
         "reference_scales": scales,
         "minimum_effective_dof_met": a["effective_dof"] >= 100_000,
-        "newton_denominator_floor": 0.001,
+        "newton_denominator_floor": _NEWTON_DENOMINATOR_FLOOR,
         "candidate": a,
         "reference": b,
         "ratios": ratios,
+    }
+    if full_trajectory:
+        result.update(energy_scope="full_trajectory", within_ratio_limit=_within_ratio_limit(ratios))
+    return result
+
+
+def _ratios(candidate: dict, reference: dict, fields: tuple[str, ...]) -> dict[str, float | None]:
+    ratios = {}
+    for field in fields:
+        expected, actual = reference[field], candidate[field]
+        ratios[field] = (
+            actual / expected
+            if expected is not None and abs(expected) > _NEWTON_DENOMINATOR_FLOOR and actual is not None
+            else None
+        )
+    return ratios
+
+
+def _within_ratio_limit(ratios: dict[str, float | None]) -> dict[str, bool | None]:
+    return {field: None if ratio is None else ratio <= _RATIO_LIMIT for field, ratio in ratios.items()}
+
+
+def summarize_conservation_trials(trials: list[dict[str, Any]]) -> dict[str, Any]:
+    """Average each engine's per-trajectory metrics before computing the ratios."""
+    scales = trials[0]["reference_scales"]
+    if any(trial["reference_scales"] != scales for trial in trials[1:]):
+        raise ValueError("conservation reference scales changed between trials")
+    fields = tuple(trials[0]["ratios"])
+    averages = {
+        role: {field: fmean(trial[role][field] for trial in trials) for field in fields}
+        for role in ("candidate", "reference")
+    }
+    ratios = _ratios(averages["candidate"], averages["reference"], fields)
+    return {
+        "trial_means": averages,
+        "ratios": ratios,
+        "within_ratio_limit": _within_ratio_limit(ratios),
+        "minimum_effective_dof_met": all(trial["minimum_effective_dof_met"] for trial in trials),
     }
 
 

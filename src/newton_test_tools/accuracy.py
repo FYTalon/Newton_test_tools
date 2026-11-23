@@ -136,7 +136,7 @@ def _rotation(quaternion: np.ndarray) -> np.ndarray:
     return matrix
 
 
-def _measure(trace: dict, model: list) -> tuple[np.ndarray, tuple[np.ndarray, ...], tuple[np.ndarray, ...]]:
+def _measure(trace: dict, model: list) -> tuple[np.ndarray, tuple[np.ndarray, ...], tuple[np.ndarray, ...], np.ndarray]:
     poses, twists = _frames(trace, model)
     q, qd = poses.astype(np.float32), twists.astype(np.float32)
     if not np.isfinite(q).all() or not np.isfinite(qd).all():
@@ -184,12 +184,12 @@ def _measure(trace: dict, model: list) -> tuple[np.ndarray, tuple[np.ndarray, ..
     force = mass[dynamic, None] * np.diff(linear, axis=0) / dt
     torque = np.diff(moment, axis=0) / dt
 
-    world_pose, _, com_velocity, _ = zip(
+    world_pose, orientations, com_velocity, _ = zip(
         *(_com_motion(pose, twist, centers, origin) for pose, twist in zip(q, qd, strict=True)),
         strict=True,
     )
     metrics = force, torque, np.stack(world_pose)[:, dynamic], np.stack(com_velocity)[:, dynamic], spin
-    return dynamic, initial, metrics
+    return dynamic, initial, metrics, np.stack(orientations)[:, dynamic]
 
 
 def jaccard_error(actual: list[list[Any]], reference: list[list[Any]]) -> float:
@@ -199,8 +199,17 @@ def jaccard_error(actual: list[list[Any]], reference: list[list[Any]]) -> float:
 
 
 def _frame_errors(errors: dict[str, np.ndarray], frame: int) -> dict:
-    kinematics = {key: float(errors[key][frame]) for key in _ERROR_KEYS[2:]}
+    kinematics = {key: float(values[frame]) for key, values in errors.items() if key not in _ERROR_KEYS[:2]}
     return {**kinematics, "x_K": max(kinematics.values())}
+
+
+def _orientation_error(actual: np.ndarray, reference: np.ndarray) -> np.ndarray:
+    """Evaluate 2 arccos(|dot|) / pi with a stable half-angle identity."""
+    dot = np.sum(actual * reference, axis=-1, keepdims=True)
+    aligned = np.where(dot < 0, -reference, reference)
+    sine = np.linalg.norm(actual - aligned, axis=-1)
+    cosine = np.linalg.norm(actual + aligned, axis=-1)
+    return np.minimum(np.arctan2(sine, cosine) * np.float32(4 / math.pi), np.float32(1.0))
 
 
 def compare_accuracy(
@@ -209,15 +218,21 @@ def compare_accuracy(
     *,
     force_floor_N: float,
     torque_floor_Nm: float,
-    position_floor_m: float,
-    linear_velocity_floor_mps: float,
-    angular_velocity_floor_radps: float,
+    position_floor_m: float | None = None,
+    linear_velocity_floor_mps: float | None = None,
+    angular_velocity_floor_radps: float | None = None,
+    kinematic_scales: dict[str, float] | None = None,
 ) -> dict[str, Any]:
-    """Compare complete traces using the reference's per-body peak scales."""
+    """Compare complete rigid traces using the configured normalization."""
 
-    floors = (force_floor_N, torque_floor_Nm, position_floor_m, linear_velocity_floor_mps, angular_velocity_floor_radps)
-    if any(not math.isfinite(value) or value <= 0 for value in floors):
-        raise ValueError("all normalization floors must be finite and positive")
+    dynamic_floors = (force_floor_N, torque_floor_Nm)
+    values = dynamic_floors + (
+        tuple(kinematic_scales[key] for key in _QUANTITIES[2:])
+        if kinematic_scales is not None
+        else (position_floor_m, linear_velocity_floor_mps, angular_velocity_floor_radps)
+    )
+    if any(value is None or not math.isfinite(value) or value <= 0 for value in values):
+        raise ValueError("all normalization floors and scales must be finite and positive")
     for key in ("case", "solver", "num_frames"):
         if candidate[key] != reference[key]:
             raise ValueError(f"trajectory {key} differs")
@@ -232,7 +247,7 @@ def compare_accuracy(
     reference_shapes = shapes(reference)
     if shapes(candidate) != reference_shapes:
         raise ValueError("collision shape identities, owners, or types differ")
-    (dynamic_a, initial_a, series_a), (dynamic_r, initial_r, series_r) = (
+    (dynamic_a, initial_a, series_a, orientation_a), (dynamic_r, initial_r, series_r, orientation_r) = (
         _measure(trace, model) for trace, model in zip((candidate, reference), models, strict=True)
     )
     if not dynamic_r.any() or not np.array_equal(dynamic_a, dynamic_r):
@@ -241,14 +256,21 @@ def compare_accuracy(
 
     scales = {}
     errors = {}
-    for label, actual, baseline, floor, error_key in zip(
-        _QUANTITIES, series_a, series_r, floors, _ERROR_KEYS, strict=True
+    for label, actual, baseline, value, error_key in zip(
+        _QUANTITIES, series_a, series_r, values, _ERROR_KEYS, strict=True
     ):
-        magnitude = baseline - baseline[0] if label == "position_m" else baseline
-        peak = np.nan_to_num(np.linalg.norm(magnitude, axis=-1), nan=0.0).max(axis=0)
-        scale = np.maximum(np.float32(floor), peak)
+        if kinematic_scales is not None and label in _QUANTITIES[2:]:
+            scale = np.full(baseline.shape[1], value, dtype=np.float32)
+            if not np.isfinite(scale).all() or np.any(scale <= 0):
+                raise ValueError(f"{label} scale is outside the positive float32 range")
+        else:
+            magnitude = baseline - baseline[0] if label == "position_m" else baseline
+            peak = np.nan_to_num(np.linalg.norm(magnitude, axis=-1), nan=0.0).max(axis=0)
+            scale = np.maximum(np.float32(value), peak)
         scales[label] = scale
         errors[error_key] = (np.linalg.norm(actual - baseline, axis=-1) / scale).max(axis=1)
+    if kinematic_scales is not None:
+        errors["orientation_relative_max"] = _orientation_error(orientation_a, orientation_r).max(axis=1)
 
     initial = {"frame": 0, **_frame_errors(errors, 0)}
     frames = []
@@ -281,14 +303,27 @@ def compare_accuracy(
         )
         dynamic_index += int(dynamic)
 
-    normalizer = dict(zip(_FLOOR_KEYS, floors, strict=True))
+    if kinematic_scales is None:
+        normalizer = dict(zip(_FLOOR_KEYS, values, strict=True))
+    else:
+        normalizer = {
+            **dict(zip(_FLOOR_KEYS[:2], dynamic_floors, strict=True)),
+            "kinematic_scales": {key: float(scales[key][0]) for key in _QUANTITIES[2:]},
+            "orientation_scale_rad": math.pi,
+        }
+    maxima = {
+        "x_C": max(row["x_C"] for row in frames),
+        "x_D": max(row["x_D"] for row in frames),
+        "x_K": max(row["x_K"] for row in [initial, *frames]),
+    }
+    if kinematic_scales is not None:
+        maxima["x"] = max(maxima.values())
+        maxima["orientation_relative_max"] = float(errors["orientation_relative_max"].max())
     return {
         "format": "sim-bench-accuracy-v2",
         "case": reference["case"],
         "solver": reference["solver"],
-        "x_C": max(row["x_C"] for row in frames),
-        "x_D": max(row["x_D"] for row in frames),
-        "x_K": max(row["x_K"] for row in [initial, *frames]),
+        **maxima,
         "frames": frames,
         "kinematic_initial": initial,
         "normalization": {"calculation_dtype": "float32", **normalizer, "bodies": bodies},

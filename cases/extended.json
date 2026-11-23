@@ -15,6 +15,7 @@
       "sync_interval_frames": 5,
       "deterministic": false,
       "graph": false,
+      "require_timed_memory": true,
       "memory_sample_interval_ms": 10
     }
   },
@@ -30,6 +31,7 @@
       "length_m": 1.0,
       "velocity_mps": 1.0,
       "free_fall": true,
+      "energy_scope": "full_trajectory",
       "protocol": {
         "accuracy": {
           "contact_stage": "end_of_substep"
@@ -50,8 +52,10 @@
       "length_m": 1.0,
       "velocity_mps": 1.0,
       "free_fall": false,
+      "energy_scope": "full_trajectory",
       "protocol": {
         "accuracy": {
+          "repetitions": 3,
           "contact_stage": "end_of_substep"
         },
         "performance": {

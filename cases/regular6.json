@@ -3,7 +3,7 @@
   "protocol": {
     "accuracy": {
       "num_frames": 500,
-      "repetitions": 2,
+      "repetitions": 1,
       "deterministic": true,
       "graph": false,
       "contact_stage": "end_of_frame"
@@ -15,6 +15,7 @@
       "sync_interval_frames": 5,
       "deterministic": false,
       "graph": true,
+      "require_timed_memory": true,
       "memory_sample_interval_ms": 10
     }
   },
@@ -29,10 +30,12 @@
       "normalization_floor": {
         "force_N": 25,
         "torque_com_Nm": 6.25,
-        "position_m": 0.01,
-        "linear_velocity_mps": 0.01,
-        "angular_velocity_radps": 0.01,
         "basis": "Rounded 1% of the lightest dynamic body weight (254.47 kg at 9.81 m/s^2); torque uses a 0.25 m scene lever arm."
+      },
+      "kinematic_scales": {
+        "position_m": 1.0,
+        "linear_velocity_mps": 3.132091953,
+        "angular_velocity_radps": 3.132091953
       }
     },
     {
@@ -45,10 +48,12 @@
       "normalization_floor": {
         "force_N": 0.85,
         "torque_com_Nm": 0.17,
-        "position_m": 0.01,
-        "linear_velocity_mps": 0.01,
-        "angular_velocity_radps": 0.01,
         "basis": "Rounded 1% of the lightest dynamic body weight (8.57528 kg at 9.81 m/s^2); torque uses a 0.2 m scene lever arm."
+      },
+      "kinematic_scales": {
+        "position_m": 1.8,
+        "linear_velocity_mps": 0.75,
+        "angular_velocity_radps": 0.4166666667
       }
     },
     {
@@ -61,10 +66,12 @@
       "normalization_floor": {
         "force_N": 0.02,
         "torque_com_Nm": 0.001,
-        "position_m": 0.01,
-        "linear_velocity_mps": 0.01,
-        "angular_velocity_radps": 0.01,
         "basis": "About 1% of the bolt weight and a 5 cm lever-arm scale."
+      },
+      "kinematic_scales": {
+        "position_m": 0.05,
+        "linear_velocity_mps": 0.7003570518,
+        "angular_velocity_radps": 14.00714104
       }
     },
     {
@@ -77,10 +84,12 @@
       "normalization_floor": {
         "force_N": 8,
         "torque_com_Nm": 8,
-        "position_m": 0.01,
-        "linear_velocity_mps": 0.01,
-        "angular_velocity_radps": 0.01,
         "basis": "Rounded 1% of the lightest dynamic body weight (80 kg at 9.81 m/s^2); torque uses a 1 m lever arm."
+      },
+      "kinematic_scales": {
+        "position_m": 2.0,
+        "linear_velocity_mps": 4.429446918,
+        "angular_velocity_radps": 2.214723459
       }
     },
     {
@@ -93,10 +102,12 @@
       "normalization_floor": {
         "force_N": 0.1,
         "torque_com_Nm": 0.01,
-        "position_m": 0.01,
-        "linear_velocity_mps": 0.01,
-        "angular_velocity_radps": 0.01,
         "basis": "Rounded 1% of a 1 kg reference weight at 9.81 m/s^2; torque uses a 0.1 m lever arm. Fixed scene scale floor; Newton per-body trajectory peaks dominate where larger."
+      },
+      "kinematic_scales": {
+        "position_m": 0.993,
+        "linear_velocity_mps": 3.121110379,
+        "angular_velocity_radps": 3.143112164
       }
     },
     {
@@ -109,10 +120,12 @@
       "normalization_floor": {
         "force_N": 0.1,
         "torque_com_Nm": 0.01,
-        "position_m": 0.01,
-        "linear_velocity_mps": 0.01,
-        "angular_velocity_radps": 0.01,
         "basis": "Rounded 1% of a 1 kg reference weight at 9.81 m/s^2; torque uses a 0.1 m lever arm. Fixed scene scale floor; Newton per-body trajectory peaks dominate where larger."
+      },
+      "kinematic_scales": {
+        "position_m": 0.62,
+        "linear_velocity_mps": 1.0,
+        "angular_velocity_radps": 1.612903226
       }
     }
   ]

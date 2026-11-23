@@ -90,7 +90,8 @@ def main(argv: list[str] | None = None) -> int:
             report = compare_trajectories(case, frames, read_json(args.candidate), read_json(args.reference))
             if args.output is not None:
                 write_json(args.output, report)
-            print(json.dumps({key: report[key] for key in ("x_C", "x_D", "x_K")}, allow_nan=False, indent=2))
+            fields = ("x_C", "x_D", "x_K", "x", "orientation_relative_max")
+            print(json.dumps({key: report[key] for key in fields if key in report}, allow_nan=False, indent=2))
             return 0
 
         performance = overrides["performance"]

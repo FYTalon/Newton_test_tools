@@ -13,7 +13,7 @@ from statistics import fmean
 from typing import Any
 
 from .accuracy import compare_accuracy
-from .conservation import compare_conservation
+from .conservation import compare_conservation, summarize_conservation_trials
 from .extended_accuracy import SPECTRUM, compare_box, compare_particles, compare_tgv
 from .gpu import sample_gpu_memory, select_timed_memory
 from .monitor import performance_metrics
@@ -78,9 +78,10 @@ def compare_trajectories(
         reference,
         force_floor_N=floors["force_N"],
         torque_floor_Nm=floors["torque_com_Nm"],
-        position_floor_m=floors["position_m"],
-        linear_velocity_floor_mps=floors["linear_velocity_mps"],
-        angular_velocity_floor_radps=floors["angular_velocity_radps"],
+        position_floor_m=floors.get("position_m"),
+        linear_velocity_floor_mps=floors.get("linear_velocity_mps"),
+        angular_velocity_floor_radps=floors.get("angular_velocity_radps"),
+        kinematic_scales=case.get("kinematic_scales"),
     )
 
 
@@ -160,11 +161,17 @@ def _read_diagnostic_accuracy(
             if gpu_seen is not None and device != gpu_seen:
                 raise ValueError("accuracy results came from different devices")
             gpu_seen = device
+            if runs and (
+                report["engine"] != runs[0]["engine"]
+                or any(report["runtime"].get(key) != runs[0]["runtime"].get(key) for key in _REPEATABILITY_IDENTITY)
+            ):
+                raise ValueError(f"engine or runtime changed between {kind} accuracy trials in {directory}")
             runs.append(report)
         sides[role] = runs
     dt = case["frame_dt_seconds"]
     coupled = case.get("coupled_summary", False)
-    count = repetitions if case.get("paired_passes") or coupled else 1
+    full_conservation = kind == "conservation" and case.get("energy_scope") == "full_trajectory"
+    count = repetitions if case.get("paired_passes") or coupled or full_conservation else 1
     results = []
     for number in range(1, count + 1):
         candidate = _trial_directory(root, case, "accuracy", "candidate", number, repetitions)
@@ -184,8 +191,11 @@ def _read_diagnostic_accuracy(
     summary_field = {"particles": "x_F", "tgv": "mean_relative_l2"}.get(kind)
     if summary_field is not None and summary_field in results[0]:
         summary = max(range(len(results)), key=lambda index: results[index][summary_field])
-    trials = {"trials": results, "summary_trial": summary + 1} if count > 1 else {}
-    return {"metric": kind, **results[summary], **trials, "engines": sides}
+    trials: dict[str, Any] = {"trials": results} if count > 1 else {}
+    if count > 1 and not full_conservation:
+        trials["summary_trial"] = summary + 1
+    averaged = summarize_conservation_trials(results) if full_conservation and count > 1 else {}
+    return {"metric": kind, **results[summary], **trials, **averaged, "engines": sides}
 
 
 def _read_performance_trial(directory: Path, case: dict[str, Any], protocol: dict[str, Any]) -> dict[str, Any]:
@@ -220,6 +230,8 @@ def _read_performance(
 ) -> dict[str, Any]:
     sides = {}
     reasons: list[str] = []
+    memory_reasons: list[str] = []
+    require_timed_memory = protocol.get("require_timed_memory", False)
     repetitions = protocol.get("repetitions", 1)
     first_trials = {}
     kind = metric_kind(case)
@@ -238,6 +250,8 @@ def _read_performance(
             label = role if repetitions == 1 else f"{role} trial {i}"
             if runtime["device_uuid"] != memory["device_uuid"]:
                 reasons.append(f"{label} used a different GPU from the one monitored")
+            if require_timed_memory and memory.get("scope") != "timed":
+                memory_reasons.append(f"{label} has no GPU memory samples inside the timed window")
             if runtime["model_counts"]["world_count"] != case["world_count"]:
                 reasons.append(f"{label} model world count differs from the case")
             if i > 1 and (
@@ -291,8 +305,9 @@ def _read_performance(
         "case": case["id"],
         "engines": sides,
         "fps_ratio": None if reasons else candidate_fps / reference_fps,
-        "gpu_peak_ratio": None if reasons else candidate_peak / reference_peak,
+        "gpu_peak_ratio": None if reasons or memory_reasons else candidate_peak / reference_peak,
         "reasons": reasons,
+        **({"gpu_memory_reasons": memory_reasons} if require_timed_memory else {}),
     }
 
 
@@ -364,17 +379,30 @@ def _markdown(report: dict[str, Any]) -> str:
         lines.append(f"性能每端独立运行 {trials} 次，{length}。")
     if "performance" in first:
         lines.append("FPS 为各轮总帧数除以总耗时。显存为各轮进程峰值的算术平均，单位为 MiB。")
+    rigid_fields = [("x_C", "x_C"), ("x_D", "x_D"), ("x_K", "x_K")]
+    if any("x" in row.get("accuracy", {}) for row in report["cases"]):
+        rigid_fields.extend((("orientation_relative_max", "测地角 / π"), ("x", "x")))
+    columns = [
+        "场景",
+        *(title for _, title in rigid_fields),
+        "候选 FPS",
+        "参考 FPS",
+        "FPS 比",
+        "候选显存",
+        "参考显存",
+        "显存比",
+    ]
     lines.extend(
         [
             "",
-            "| 场景 | x_C | x_D | x_K | 候选 FPS | 参考 FPS | FPS 比 | 候选显存 | 参考显存 | 显存比 |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| " + " | ".join(columns) + " |",
+            "| --- |" + " ---: |" * (len(columns) - 1),
         ]
     )
     notes = []
     for row in report["cases"]:
         accuracy, performance = row.get("accuracy", {}), row.get("performance")
-        cells = [row["case"], *(number(accuracy.get(key)) for key in ("x_C", "x_D", "x_K"))]
+        cells = [row["case"], *(number(accuracy.get(key)) for key, _ in rigid_fields)]
         if performance is None:
             cells.extend(["NA"] * 6)
         else:
@@ -392,6 +420,7 @@ def _markdown(report: dict[str, Any]) -> str:
                 ]
             )
             notes.extend(f"- {row['case']} · {reason}" for reason in performance["reasons"])
+            notes.extend(f"- {row['case']} · {reason}" for reason in performance.get("gpu_memory_reasons", []))
         if combined := row.get("coupled_performance"):
             notes.append(
                 f"- 流固耦合两版本平均 {number(combined['candidate_fps'])} FPS，"
