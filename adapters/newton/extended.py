@@ -121,7 +121,7 @@ def prepare_trial(request: dict[str, Any], *, output: Path) -> Iterator[Trial]:
                 "--voxel-size",
                 "0.05",
                 "--particles-per-cell",
-                "1",
+                "2",
                 "--initial-snapshot",
                 str(output / "initial_snapshot.npz"),
             )

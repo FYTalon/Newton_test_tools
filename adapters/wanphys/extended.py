@@ -122,7 +122,7 @@ def prepare_trial(request: dict[str, Any], *, output: Path) -> Iterator[Trial]:
     elif kind == "particles":
         argv.extend(("--substeps", "2", "--stress-records", "128"))
     elif kind == "pressure_cube":
-        argv.extend(("--voxel-size", "0.05", "--particles-per-cell", "1"))
+        argv.extend(("--voxel-size", "0.05", "--particles-per-cell", "2"))
         if accuracy:
             argv.extend(("--floor-pressure", "--cube-metrics"))
     elif kind == "volume":
@@ -158,6 +158,9 @@ def prepare_trial(request: dict[str, Any], *, output: Path) -> Iterator[Trial]:
             scenarios = import_module("wanphys.examples")
             viewer, args = scenarios.init(module.GridMpmSingleBoxScenario.create_parser(), argv=argv)
             scene = module.GridMpmSingleBoxScenario(viewer, args)
+            if accuracy:
+                # Apply the accuracy graph policy to the solver's CFL substeps.
+                scene.solver.use_graph = False
         else:
             if case["id"] != "basic_shapes_100k":
                 argv.append("--deterministic" if protocol["deterministic"] else "--no-deterministic")
