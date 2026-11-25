@@ -28,35 +28,7 @@
     "module": "novaphy.demos.mujoco.demo_robot_g1",
     "config": "G1Config",
     "factory": "create_g1_runtime",
-    "step": "step_g1_runtime",
-    "labels": {
-      "shapes": {
-        "78": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/torso_link_1",
-        "79": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/head_link_1",
-        "84": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/left_shoulder_pitch_link/left_shoulder_roll_link/left_shoulder_yaw_link/left_elbow_link/left_wrist_roll_link/left_wrist_pitch_link/left_wrist_yaw_link/left_wrist_yaw_link_1",
-        "85": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/left_shoulder_pitch_link/left_shoulder_roll_link/left_shoulder_yaw_link/left_elbow_link/left_wrist_roll_link/left_wrist_pitch_link/left_wrist_yaw_link/left_hand_palm_link_1",
-        "96": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/right_shoulder_pitch_link/right_shoulder_roll_link/right_shoulder_yaw_link/right_elbow_link/right_wrist_roll_link/right_wrist_pitch_link/right_wrist_yaw_link/right_wrist_yaw_link_1",
-        "97": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/right_shoulder_pitch_link/right_shoulder_roll_link/right_shoulder_yaw_link/right_elbow_link/right_wrist_roll_link/right_wrist_pitch_link/right_wrist_yaw_link/right_hand_palm_link_1",
-        "182": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/torso_link_1",
-        "183": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/head_link_1",
-        "188": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/left_shoulder_pitch_link/left_shoulder_roll_link/left_shoulder_yaw_link/left_elbow_link/left_wrist_roll_link/left_wrist_pitch_link/left_wrist_yaw_link/left_wrist_yaw_link_1",
-        "189": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/left_shoulder_pitch_link/left_shoulder_roll_link/left_shoulder_yaw_link/left_elbow_link/left_wrist_roll_link/left_wrist_pitch_link/left_wrist_yaw_link/left_hand_palm_link_1",
-        "200": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/right_shoulder_pitch_link/right_shoulder_roll_link/right_shoulder_yaw_link/right_elbow_link/right_wrist_roll_link/right_wrist_pitch_link/right_wrist_yaw_link/right_wrist_yaw_link_1",
-        "201": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/right_shoulder_pitch_link/right_shoulder_roll_link/right_shoulder_yaw_link/right_elbow_link/right_wrist_roll_link/right_wrist_pitch_link/right_wrist_yaw_link/right_hand_palm_link_1",
-        "286": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/torso_link_1",
-        "287": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/head_link_1",
-        "292": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/left_shoulder_pitch_link/left_shoulder_roll_link/left_shoulder_yaw_link/left_elbow_link/left_wrist_roll_link/left_wrist_pitch_link/left_wrist_yaw_link/left_wrist_yaw_link_1",
-        "293": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/left_shoulder_pitch_link/left_shoulder_roll_link/left_shoulder_yaw_link/left_elbow_link/left_wrist_roll_link/left_wrist_pitch_link/left_wrist_yaw_link/left_hand_palm_link_1",
-        "304": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/right_shoulder_pitch_link/right_shoulder_roll_link/right_shoulder_yaw_link/right_elbow_link/right_wrist_roll_link/right_wrist_pitch_link/right_wrist_yaw_link/right_wrist_yaw_link_1",
-        "305": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/right_shoulder_pitch_link/right_shoulder_roll_link/right_shoulder_yaw_link/right_elbow_link/right_wrist_roll_link/right_wrist_pitch_link/right_wrist_yaw_link/right_hand_palm_link_1",
-        "390": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/torso_link_1",
-        "391": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/head_link_1",
-        "396": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/left_shoulder_pitch_link/left_shoulder_roll_link/left_shoulder_yaw_link/left_elbow_link/left_wrist_roll_link/left_wrist_pitch_link/left_wrist_yaw_link/left_wrist_yaw_link_1",
-        "397": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/left_shoulder_pitch_link/left_shoulder_roll_link/left_shoulder_yaw_link/left_elbow_link/left_wrist_roll_link/left_wrist_pitch_link/left_wrist_yaw_link/left_hand_palm_link_1",
-        "408": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/right_shoulder_pitch_link/right_shoulder_roll_link/right_shoulder_yaw_link/right_elbow_link/right_wrist_roll_link/right_wrist_pitch_link/right_wrist_yaw_link/right_wrist_yaw_link_1",
-        "409": "/g1_29dof_with_hand_rev_1_0/Geometry/pelvis/waist_yaw_link/waist_roll_link/torso_link/right_shoulder_pitch_link/right_shoulder_roll_link/right_shoulder_yaw_link/right_elbow_link/right_wrist_roll_link/right_wrist_pitch_link/right_wrist_yaw_link/right_hand_palm_link_1"
-      }
-    }
+    "step": "step_g1_runtime"
   },
   "robot_anymal_c_walk": {
     "solver": "mujoco",
@@ -64,5 +36,52 @@
     "config": "AnymalCWalkConfig",
     "factory": "create_anymal_c_walk_runtime",
     "step": "step_anymal_c_walk_runtime"
+  },
+  "basic_shapes_100k": {
+    "solver": "xpbd",
+    "module": "novaphy.demos.xpbd.demo_basic_shapes_100k",
+    "class": "Demo",
+    "parser": "create_parser",
+    "world_count": 49,
+    "dynamic_bodies": 16667,
+    "effective_dof": 100002
+  },
+  "anymal_c_walk_100k": {
+    "solver": "mujoco",
+    "module": "novaphy.demos.mujoco.demo_robot_anymal_c_walk_5560",
+    "scene_module": "novaphy.scenes.anymal_c_swarm",
+    "world_count": 556,
+    "dynamic_bodies": 72280,
+    "effective_dof": 100080
+  },
+  "implicit_mpm_dam_break": {
+    "solver": "implicit_mpm",
+    "metric": "particles",
+    "module": "novaphy.demos.mpm.demo_mpm_water_dam_break",
+    "implementation": "native_q1_p0_pic",
+    "particles": 439200
+  },
+  "implicit_mpm_water_dam_single_box": {
+    "solver": "implicit_mpm",
+    "metric": "pressure_cube",
+    "module": "novaphy.demos.mpm.demo_mpm_water_cube_v1",
+    "implementation": "native_implicit_mpm_v1",
+    "particles": 678912
+  },
+  "fluid_grid_mpm_single_box": {
+    "solver": "implicit_mpm",
+    "metric": "volume",
+    "module": "novaphy.demos.mpm.demo_mpm_water_cube_v2",
+    "implementation": "native_implicit_mpm_density_projection_v2",
+    "particles": 678912
+  },
+  "fluid_grid_taylor_green": {
+    "solver": "lbm_domain",
+    "metric": "tgv",
+    "module": "novaphy.demos.lbm_validation.domain_cases",
+    "implementation": "CumulantK17",
+    "cells": 256,
+    "reynolds": 1600,
+    "storage": "Float16Residual"
   }
 }

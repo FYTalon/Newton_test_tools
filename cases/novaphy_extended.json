@@ -1,0 +1,162 @@
+{
+  "format": "sim-bench-suite-v1",
+  "protocol": {
+    "accuracy": {
+      "num_frames": 500,
+      "repetitions": 1,
+      "deterministic": false,
+      "graph": false,
+      "contact_stage": "end_of_frame"
+    },
+    "performance": {
+      "num_frames": 500,
+      "repetitions": 3,
+      "warmup_frames": 5,
+      "sync_interval_frames": 5,
+      "deterministic": false,
+      "graph": false,
+      "require_timed_memory": true,
+      "memory_sample_interval_ms": 10
+    }
+  },
+  "cases": [
+    {
+      "id": "basic_shapes_100k",
+      "metric": "conservation",
+      "solver": "xpbd",
+      "collision": "external",
+      "frame_dt_seconds": 0.01,
+      "substeps": 5,
+      "world_count": 49,
+      "length_m": 1.0,
+      "velocity_mps": 1.0,
+      "free_fall": true,
+      "energy_scope": "full_trajectory",
+      "protocol": {
+        "accuracy": {
+          "contact_stage": "end_of_substep"
+        },
+        "performance": {
+          "graph": true
+        }
+      }
+    },
+    {
+      "id": "anymal_c_walk_100k",
+      "metric": "conservation",
+      "solver": "mujoco",
+      "collision": "external",
+      "frame_dt_seconds": 0.02,
+      "substeps": 4,
+      "world_count": 556,
+      "length_m": 1.0,
+      "velocity_mps": 1.0,
+      "free_fall": false,
+      "energy_scope": "full_trajectory",
+      "protocol": {
+        "accuracy": {
+          "repetitions": 3,
+          "contact_stage": "end_of_substep"
+        },
+        "performance": {
+          "graph": true
+        }
+      }
+    },
+    {
+      "id": "implicit_mpm_dam_break",
+      "metric": "particles",
+      "solver": "implicit_mpm",
+      "collision": "particle_boundary",
+      "frame_dt_seconds": 0.016666666666666666,
+      "substeps": 2,
+      "world_count": 1,
+      "paired_passes": true,
+      "particle_error_scales": {
+        "scene_dimensions_m": [
+          4.0,
+          1.0,
+          4.0
+        ]
+      },
+      "protocol": {
+        "accuracy": {
+          "num_frames": 600,
+          "repetitions": 3,
+          "deterministic": false
+        },
+        "performance": {
+          "num_frames": 600
+        }
+      }
+    },
+    {
+      "id": "implicit_mpm_water_dam_single_box",
+      "metric": "pressure_cube",
+      "solver": "implicit_mpm",
+      "collision": "fluid_rigid",
+      "frame_dt_seconds": 0.016666666666666666,
+      "substeps": 1,
+      "world_count": 1,
+      "coupled_summary": true,
+      "protocol": {
+        "accuracy": {
+          "num_frames": 600,
+          "repetitions": 3,
+          "deterministic": true
+        },
+        "performance": {
+          "num_frames": 600
+        }
+      }
+    },
+    {
+      "id": "fluid_grid_mpm_single_box",
+      "metric": "volume",
+      "solver": "implicit_mpm",
+      "collision": "fluid_rigid",
+      "frame_dt_seconds": 0.016666666666666666,
+      "substeps": 1,
+      "world_count": 1,
+      "coupled_summary": true,
+      "protocol": {
+        "accuracy": {
+          "num_frames": 600,
+          "repetitions": 3,
+          "deterministic": true
+        },
+        "performance": {
+          "num_frames": 600
+        }
+      },
+      "reference": {
+        "id": "implicit_mpm_water_dam_single_box",
+        "metric": "pressure_cube",
+        "solver": "implicit_mpm"
+      }
+    },
+    {
+      "id": "fluid_grid_taylor_green",
+      "metric": "tgv",
+      "solver": "lbm_domain",
+      "collision": "periodic",
+      "frame_dt_seconds": 0.01,
+      "substeps": 6,
+      "world_count": 1,
+      "paired_passes": true,
+      "baseline": {
+        "fps": 30,
+        "gpu_peak_bytes": 6442450944
+      },
+      "protocol": {
+        "accuracy": {
+          "num_frames": 2000,
+          "repetitions": 3
+        },
+        "performance": {
+          "num_frames": 2000
+        }
+      }
+    }
+  ]
+}

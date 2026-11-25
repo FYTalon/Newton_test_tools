@@ -90,7 +90,9 @@ NEWTON_ADAPTER=".venv/bin/python -m newton_test_tools worker --adapter adapters/
 
 以 WanPhys 作为参评端时，用已安装 WanPhys 的 Python 环境，将 `--adapter` 指向公开的 `adapters/wanphys/adapter.py`。[WanPhys 运行说明](adapters/wanphys/README.md)
 
-以 NovaPhy 作为参评端时，将候选端命令中的 `worker --adapter` 指向 `adapters/novaphy/adapter.py`。[NovaPhy 六例接入说明](adapters/novaphy/README.md)
+以 NovaPhy 作为参评端时，将候选端命令中的 `worker --adapter` 指向 `adapters/novaphy/adapter.py`。
+该入口覆盖全部 11 个物理场景、12 组测试。常规六例使用 `regular6.json`，其余使用
+`cases/novaphy_extended.json` 如实标注原生求解器实现。[NovaPhy 接入说明](adapters/novaphy/README.md)
 
 ```sh
 uv run --no-sync newton-test run --suite cases/regular6.json --case basic_shapes \
