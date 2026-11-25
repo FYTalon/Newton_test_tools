@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Run the NovaPhy demos selected by the regular-six benchmark."""
+"""Run NovaPhy's eleven benchmark scenarios (twelve implementation groups)."""
 
 from __future__ import annotations
 
@@ -18,11 +18,11 @@ from uuid import UUID
 
 import novaphy
 import numpy as np
-from newton_test_tools import Trial
 from novaphy.viewer import ViewerNull
 
-from .snapshot import RigidReader, _array
+from newton_test_tools import Trial
 
+from .snapshot import RigidReader, _array
 
 _SCENES = Path(__file__).with_name("scenes.json")
 
@@ -79,9 +79,16 @@ def _xpbd_scene(case: dict[str, Any], settings: dict[str, Any], frames: int, spe
     if case["id"] == "nut_bolt_hydro":
         argv += ["--world-count", str(case["world_count"]), "--num-per-world", "1"]
     args = getattr(example, spec["parser"])().parse_args(argv)
+    original = getattr(example, spec["class"])
+
+    class ConfiguredScene(original):
+        def __init__(self, options):
+            super().__init__(options)
+            self.collision_deterministic = settings["deterministic"]
+
     viewer = ViewerNull(num_frames=frames)
     try:
-        yield getattr(example, spec["class"]).create_example(viewer, args), example, argv
+        yield ConfiguredScene.create_example(viewer, args), example, argv
     finally:
         viewer.close()
 
@@ -185,8 +192,22 @@ def prepare_trial(request: dict[str, Any], *, output: Path) -> Iterator[Trial]:
     case_id, solver_name = case["id"], case["solver"]
     manifest = _SCENES.read_bytes()
     spec = json.loads(manifest).get(case_id)
-    if spec is None or spec["solver"] != solver_name or case["collision"] != "external":
+    if spec is None or spec["solver"] != solver_name:
         raise ValueError(f"unsupported NovaPhy case and solver: {case_id}, {solver_name}")
+    if spec.get("metric") in ("particles", "pressure_cube", "volume", "tgv"):
+        from .fluids import prepare_trial as prepare_fluid
+
+        with prepare_fluid(request, spec=spec, output=output) as trial:
+            yield trial
+        return
+    if case["collision"] != "external":
+        raise ValueError("Rigid NovaPhy scenes require external collision detection")
+    if case.get("metric") == "conservation":
+        from .large import prepare_trial as prepare_large
+
+        with prepare_large(request, spec=spec, output=output) as trial:
+            yield trial
+        return
     is_robot = solver_name == "mujoco"
     accuracy = request["mode"] == "accuracy"
     if accuracy and request.get("reference_identity") is None:
@@ -239,7 +260,7 @@ def prepare_trial(request: dict[str, Any], *, output: Path) -> Iterator[Trial]:
             runtime["contact_stage"] = "end_of_frame"
             reader = RigidReader(
                 scene, request["reference_identity"], shape_flags, mujoco=is_robot,
-                shape_aliases=spec.get("labels", {}).get("shapes", {}),
+                shape_aliases={},
             )
         yield Trial(
             engine="NovaPhy",
