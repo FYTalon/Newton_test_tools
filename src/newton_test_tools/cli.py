@@ -10,6 +10,8 @@ from pathlib import Path
 
 from .protocol import case_protocol, load_suite, metric_kind, positive_int, positive_number, read_json, write_json
 from .runner import compare_trajectories, run, verify
+from .score_reports import read_team_reports
+from .scoring import score
 from .worker import run_worker
 
 
@@ -58,6 +60,14 @@ def _parser() -> argparse.ArgumentParser:
     report.add_argument("--json", action="store_true")
     check = commands.add_parser("verify", help="Check hashes and recompute a completed report.")
     check.add_argument("directory", type=Path)
+    scoring = commands.add_parser("score", help="Calculate observation, task and total scores.")
+    scoring.add_argument("--input", type=Path, required=True)
+    scoring.add_argument("--rules", type=Path, default=Path("cases/scoring.json"))
+    scoring.add_argument("--output", type=Path, required=True)
+    score_reports = commands.add_parser("score-reports", help="Calculate scores from benchmark report directories.")
+    score_reports.add_argument("--team", action="append", nargs=2, metavar=("ID", "RUN_DIR"), required=True)
+    score_reports.add_argument("--rules", type=Path, default=Path("cases/scoring.json"))
+    score_reports.add_argument("--output", type=Path, required=True)
     return parser
 
 
@@ -65,6 +75,52 @@ def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     try:
+        if args.command in ("score", "score-reports"):
+            if args.command == "score":
+                data = read_json(args.input)
+            else:
+                teams: dict[str, list[Path]] = {}
+                for team_id, directory in args.team:
+                    teams.setdefault(team_id, []).append(Path(directory))
+                if len(teams) == 1:
+                    placeholder = "pending"
+                    while placeholder in teams:
+                        placeholder += "_"
+                    data = {
+                        "teams": [read_team_reports(team_id, directories) for team_id, directories in teams.items()]
+                    }
+                    scene_ids = {scene for task in read_json(args.rules)["tasks"] for scene in task["scenes"]}
+                    data["teams"].append(
+                        {
+                            "id": placeholder,
+                            "scenes": {
+                                scene_id: {
+                                    "awaiting_results": True,
+                                    "pending_observations": ["performance", "accuracy", "memory"],
+                                }
+                                for scene_id in scene_ids
+                            },
+                        }
+                    )
+                else:
+                    data = {
+                        "teams": [read_team_reports(team_id, directories) for team_id, directories in teams.items()]
+                    }
+            result = score(data, read_json(args.rules))
+            if args.command == "score-reports":
+                result["sources"] = {team["id"]: team.get("sources", []) for team in data["teams"]}
+                by_id = {team["id"]: team for team in data["teams"]}
+                for team in result["teams"]:
+                    for scene in team["scenes"]:
+                        scene["evidence"] = (
+                            by_id[team["id"]].get("scenes", {}).get(scene["scene"], {}).get("source_cases", {})
+                        )
+            write_json(args.output, result)
+            for team in result["teams"]:
+                points = team["total_points"]
+                display = f"{points:.2f}" if points is not None else "pending"
+                print(f"{team['id']}: {display} / {result['maximum_points']}")
+            return 0
         if args.command == "worker":
             run_worker(args.adapter, args.request, args.output)
             return 0
