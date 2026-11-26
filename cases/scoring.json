@@ -19,6 +19,7 @@
   "memory": {
     "mean_peak": "sum(three_process_peaks) / 3",
     "ratio": "candidate_memory_occupancy / reference_memory_occupancy",
+    "coupled_candidate_mean_peak": "(version_1_mean_peak + version_2_mean_peak) / 2",
     "tgv_reference_peak_bytes": 6442450944
   },
   "curves": {
@@ -34,6 +35,14 @@
     "qualification_ratio_at_most": 1.05
   },
   "coupled": {
+    "accuracy_repetitions": 1,
+    "temporal_error_reduction": "maximum",
+    "pressure_error": "max_frame(sum_grid(abs(pressure_A - pressure_N)) / sum_grid(abs(pressure_N)))",
+    "dry_cell_pressure": 0,
+    "cube_state_error": "max_frame(norm(center_A - center_N) / norm(center_N - initial_center))",
+    "volume_loss_error": "max_frame(max(0, 1 - candidate_CIC_volume / candidate_initial_CIC_volume))",
+    "zero_reference_equal_error": 0,
+    "zero_reference_unequal_error": "missing",
     "components": {
       "pressure_error": {"version": 1, "weight": 0.25, "full_score_error": 0.05},
       "cube_state_error": {"version": 1, "weight": 0.25, "full_score_error": 0.05},
@@ -42,6 +51,9 @@
     "component_score": "max(0, min(100, 100 * (1 - error) / (1 - full_score_error)))"
   },
   "aggregation": {
+    "accuracy_repetitions": 1,
+    "accuracy_repetitions_by_scene": {"1-4": 3, "1-8": 3},
+    "large_scene_accuracy": "ratio_of_candidate_and_reference_mean_full_trajectory_metrics",
     "scene_points": "sum(observation_points * score / 100)",
     "task_points": "mean(scene_points)",
     "total_points": "sum(task_points)",

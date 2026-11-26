@@ -110,7 +110,14 @@ def _frame_time(sample: Sample, index: int, dt: float) -> None:
 
 
 def compare_box(
-    candidate: Path, reference: Path, frames: int, dt: float, *, volume: bool, pressure_grid: bool = False
+    candidate: Path,
+    reference: Path,
+    frames: int,
+    dt: float,
+    *,
+    volume: bool,
+    pressure_grid: bool = False,
+    scoring_metrics: bool = False,
 ) -> dict[str, Any]:
     a_model, b_model = load_sample(candidate), load_sample(reference)
     _checked_metadata(a_model, b_model)
@@ -167,13 +174,21 @@ def compare_box(
                 a_pressure, b_pressure = a["floor_pressure_pa"], b["floor_pressure_pa"]
                 a_wet, b_wet = np.isfinite(a_pressure), np.isfinite(b_pressure)
                 common = a_wet & b_wet
-                pressure_error = float(np.abs(a_pressure[common] - b_pressure[common]).sum())
-                reference_pressure = float(np.abs(b_pressure[common]).sum())
+                if scoring_metrics:
+                    actual_pressure = np.nan_to_num(a_pressure, nan=0.0)
+                    expected_pressure = np.nan_to_num(b_pressure, nan=0.0)
+                    pressure_error = float(np.abs(actual_pressure - expected_pressure).sum())
+                    reference_pressure = float(np.abs(expected_pressure).sum())
+                else:
+                    pressure_error = float(np.abs(a_pressure[common] - b_pressure[common]).sum())
+                    reference_pressure = float(np.abs(b_pressure[common]).sum())
                 row.update(
                     floor_pressure_grid_error_sum_pa=pressure_error,
                     floor_pressure_grid_reference_sum_pa=reference_pressure,
                     floor_pressure_grid_relative_error=pressure_error / reference_pressure
                     if reference_pressure
+                    else 0.0
+                    if scoring_metrics and pressure_error == 0
                     else None,
                     common_wet_cells=int(common.sum()),
                     wet_mask_difference_cells=int(np.count_nonzero(a_wet ^ b_wet)),
@@ -188,7 +203,11 @@ def compare_box(
                 mean_pressure_N_pa=pressures[1],
                 absolute_pressure_error_pa=abs(pressures[0] - pressures[1]),
                 cube_center_error_m=absolute,
-                cube_relative_error=absolute / displacement if displacement > 1e-12 else None,
+                cube_relative_error=absolute / displacement
+                if displacement > 1e-12
+                else 0.0
+                if scoring_metrics and absolute == 0
+                else None,
             )
         rows.append(row)
 
@@ -201,6 +220,14 @@ def compare_box(
             "reference_mean_volume_loss_fraction": 1.0 - b_mean,
             "mean_abs_ratio_difference": math.fsum(differences) / frames,
             "max_abs_ratio_difference": max(differences),
+            **(
+                {
+                    "volume_loss_error": max(max(0.0, 1.0 - row["volume_ratio_W"]) for row in rows),
+                    "reference_volume_loss_max": max(max(0.0, 1.0 - row["volume_ratio_N"]) for row in rows),
+                }
+                if scoring_metrics
+                else {}
+            ),
             "frames": rows,
         }
     denominator = math.fsum(abs(row["mean_pressure_N_pa"]) for row in rows)
@@ -214,12 +241,29 @@ def compare_box(
         pressure_result = {
             "floor_pressure_relative_error": error / reference_load if reference_load > 0 else None,
             "floor_pressure_mean_load_relative_error": old_pressure_error,
-            "floor_pressure_comparison": "relative_l1_common_wet_cells",
+            "floor_pressure_comparison": "relative_l1_full_grid_dry_cells_zero"
+            if scoring_metrics
+            else "relative_l1_common_wet_cells",
         }
     relative = [row["cube_relative_error"] for row in rows if row["cube_relative_error"] is not None]
     return {
         **pressure_result,
         "cube_center_mean_relative_error": math.fsum(relative) / len(relative) if relative else None,
+        **(
+            {
+                "pressure_error": max(row["floor_pressure_grid_relative_error"] for row in rows)
+                if all(row.get("floor_pressure_grid_relative_error") is not None for row in rows)
+                else None,
+                "cube_state_error": max(row["cube_relative_error"] for row in rows)
+                if all(row["cube_relative_error"] is not None for row in rows)
+                else None,
+                "scoring_error_reduction": "trajectory_maximum",
+                "pressure_error_method": "relative_l1_full_grid_dry_cells_zero",
+                "cube_state_error_method": "center_position_relative_to_Newton_displacement",
+            }
+            if scoring_metrics
+            else {}
+        ),
         "frames": rows,
     }
 

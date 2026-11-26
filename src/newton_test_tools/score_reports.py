@@ -26,7 +26,7 @@ CASE_SCENES = {
 def _formal_protocol(row: dict, mode: str, scene_id: str) -> bool:
     protocol = row.get("protocol", {}).get(mode, {})
     frames = 2000 if scene_id == "1-11" else 600 if scene_id in {"1-9", "1-10"} else 500
-    repetitions = 3 if mode == "performance" or scene_id in {"1-8", "1-9", "1-10", "1-11"} else 1
+    repetitions = 3 if mode == "performance" or scene_id in {"1-4", "1-8"} else 1
     deterministic = mode == "accuracy" and scene_id not in {"1-4", "1-8", "1-9", "1-11"}
     if (
         protocol.get("num_frames") != frames
@@ -79,7 +79,7 @@ def read_team_reports(team_id: str, directories: list[Path]) -> dict[str, Any]:
     for directory in directories:
         directory = directory.expanduser().resolve()
         report = read_json(directory / "report.json")
-        if report.get("format") != "sim-bench-comparison-v2":
+        if report.get("format") not in {"sim-bench-comparison-v2", "sim-bench-comparison-v3"}:
             raise ValueError(f"unsupported comparison format: {directory}")
         sources.append(str(directory))
         for row in report["cases"]:
@@ -124,6 +124,15 @@ def read_team_reports(team_id: str, directories: list[Path]) -> dict[str, Any]:
                 completed_substeps=candidate.get("substeps_completed"),
                 accuracy={"candidate": candidate, "reference": reference},
             )
+            trials = accuracy.get("trials", [])
+            if trials:
+                for target, field in (
+                    ("effective_dof", "effective_dof"),
+                    ("completed_frames", "frames_completed"),
+                    ("completed_substeps", "substeps_completed"),
+                ):
+                    values = [trial.get("candidate", {}).get(field) for trial in trials]
+                    scene[target] = min(values) if all(isinstance(value, int) for value in values) else None
         elif scene_id == "1-9":
             scene["accuracy"] = {"x_F": accuracy.get("x_F")}
         elif scene_id == "1-11":
@@ -150,13 +159,19 @@ def read_team_reports(team_id: str, directories: list[Path]) -> dict[str, Any]:
             accuracy_trials=_coupled_trials(version_2, volume=True)
         )
         coupled["fps_ratio"] = version_2.get("coupled_performance", {}).get("fps_ratio")
-        coupled["pending_observations"] = ["accuracy", "memory"]
-        if (
-            not _formal_protocol(version_1, "performance", "1-10")
-            or not _formal_protocol(version_2, "performance", "1-10")
-            or coupled["fps_ratio"] is None
+        coupled["gpu_peak_ratio"] = version_2.get("coupled_performance", {}).get("gpu_peak_ratio")
+        coupled["accuracy"] = {
+            "pressure_error": version_1.get("accuracy", {}).get("pressure_error"),
+            "cube_state_error": version_1.get("accuracy", {}).get("cube_state_error"),
+            "volume_loss_error": version_2.get("accuracy", {}).get("volume_loss_error"),
+        }
+        coupled["pending_observations"] = []
+        if not _formal_protocol(version_1, "accuracy", "1-10") or not _formal_protocol(version_2, "accuracy", "1-10"):
+            coupled["pending_observations"].append("accuracy")
+        if not _formal_protocol(version_1, "performance", "1-10") or not _formal_protocol(
+            version_2, "performance", "1-10"
         ):
-            coupled["pending_observations"].append("performance")
+            coupled["pending_observations"].extend(("performance", "memory"))
     for scene_id in set(CASE_SCENES.values()) - scenes.keys():
         scenes[scene_id] = {
             "awaiting_results": True,
