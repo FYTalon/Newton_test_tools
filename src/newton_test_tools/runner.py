@@ -141,7 +141,12 @@ def _read_accuracy(root: Path, case: dict[str, Any], protocol: dict[str, Any]) -
 
 
 def _read_diagnostic_accuracy(
-    root: Path, case: dict[str, Any], protocol: dict[str, Any], *, save_event_details: bool = False
+    root: Path,
+    case: dict[str, Any],
+    protocol: dict[str, Any],
+    *,
+    save_event_details: bool = False,
+    scoring_metrics: bool = False,
 ) -> dict[str, Any]:
     kind = metric_kind(case)
     frames, repetitions = protocol["num_frames"], protocol["repetitions"]
@@ -185,7 +190,15 @@ def _read_diagnostic_accuracy(
         elif kind == "particles":
             result = compare_particles(candidate, reference, frames, scales=particle_error_scales(case))
         else:
-            result = compare_box(candidate, reference, frames, dt, volume=kind == "volume", pressure_grid=coupled)
+            result = compare_box(
+                candidate,
+                reference,
+                frames,
+                dt,
+                volume=kind == "volume",
+                pressure_grid=coupled,
+                scoring_metrics=scoring_metrics and coupled,
+            )
         results.append(result)
     summary = 0
     summary_field = {"particles": "x_F", "tgv": "mean_relative_l2"}.get(kind)
@@ -316,6 +329,7 @@ def _read_comparison(
 ) -> dict[str, Any]:
     rows = []
     legacy_fps = plan.get("comparison_version", 1) == 1
+    scoring_metrics = plan.get("comparison_version", 1) >= 3
     for case in plan["cases"]:
         row: dict[str, Any] = {"case": case["id"]}
         if not legacy_fps:
@@ -333,7 +347,9 @@ def _read_comparison(
             elif metric_kind(case) == "rigid":
                 row[mode] = _read_accuracy(_mode_directory(root, case, mode), case, protocol)
             else:
-                row[mode] = _read_diagnostic_accuracy(root, case, protocol, save_event_details=save_event_details)
+                row[mode] = _read_diagnostic_accuracy(
+                    root, case, protocol, save_event_details=save_event_details, scoring_metrics=scoring_metrics
+                )
         rows.append(row)
     by_case = {row["case"]: row for row in rows}
     for case in plan["cases"]:
@@ -351,8 +367,22 @@ def _read_comparison(
             "reference_fps": reference_fps,
             "fps_ratio": None if any(version["reasons"] for version in versions) else fps / reference_fps,
         }
+        if scoring_metrics:
+            candidate_peak = fmean(_performance_means(version["engines"]["candidate"])[1] for version in versions)
+            _, reference_peak = _performance_means(versions[0]["engines"]["reference"])
+            memory_invalid = any(version["reasons"] or version.get("gpu_memory_reasons") for version in versions)
+            second["coupled_performance"].update(
+                candidate_mean_peak_bytes=candidate_peak,
+                reference_mean_peak_bytes=reference_peak,
+                gpu_peak_ratio=None if memory_invalid else candidate_peak / reference_peak,
+                version_reduction="mean",
+            )
     return {
-        "format": "sim-bench-comparison-v1" if legacy_fps else _COMPARISON_FORMAT,
+        "format": "sim-bench-comparison-v1"
+        if legacy_fps
+        else "sim-bench-comparison-v3"
+        if scoring_metrics
+        else _COMPARISON_FORMAT,
         "protocol": plan["protocol"],
         "cases": rows,
     }
@@ -510,7 +540,7 @@ def run(output: Path, plan: dict[str, Any], commands: dict[str, list[str]], gpu:
 
     output = output.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=False)
-    plan = {**plan, "comparison_version": 2}
+    plan = {**plan, "comparison_version": 3}
     write_json(output / "run.json", {**plan, "commands": commands, "gpu": gpu})
     references: dict[tuple[str, str], tuple[dict[str, Any], dict[str, Any]]] = {}
     for case in plan["cases"]:

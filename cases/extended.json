@@ -34,6 +34,7 @@
       "energy_scope": "full_trajectory",
       "protocol": {
         "accuracy": {
+          "repetitions": 3,
           "contact_stage": "end_of_substep"
         },
         "performance": {
@@ -78,7 +79,7 @@
       "protocol": {
         "accuracy": {
           "num_frames": 600,
-          "repetitions": 3,
+          "repetitions": 1,
           "deterministic": false
         },
         "performance": {
@@ -98,7 +99,7 @@
       "protocol": {
         "accuracy": {
           "num_frames": 600,
-          "repetitions": 3,
+          "repetitions": 1,
           "deterministic": true
         },
         "performance": {
@@ -118,7 +119,7 @@
       "protocol": {
         "accuracy": {
           "num_frames": 600,
-          "repetitions": 3,
+          "repetitions": 1,
           "deterministic": true
         },
         "performance": {
@@ -147,7 +148,7 @@
       "protocol": {
         "accuracy": {
           "num_frames": 2000,
-          "repetitions": 3
+          "repetitions": 1
         },
         "performance": {
           "num_frames": 2000

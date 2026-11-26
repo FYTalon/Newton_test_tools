@@ -151,27 +151,28 @@ def _mpm_example(request, spec):
     )
     module = import_module(spec["module"])
     coupled = spec["metric"] != "particles"
-    argv = ["--headless", "--frames", str(frames)]
+    argv = ["--viewer", "null", "--num-frames", str(frames)]
     if coupled:
         argv += ["--mode", "accuracy" if protocol["deterministic"] else "normal"]
-    args = module.create_parser(module.__doc__, mode=coupled).parse_args(argv)
+    args = module.Example.create_parser().parse_args(argv)
     viewer = ViewerNull(num_frames=frames)
     try:
         if spec["metric"] == "volume":
-            make_scene = module.make_scene
+            configure_projection = module.configure_density_projection
+            args.graph_solve = False
 
-            def without_graphs(options):
-                # Example initializes its backend before this factory; that
-                # setup enables prewarming again. Override it at construction.
+            def without_graphs(scene, options):
+                # Backend setup enables prewarming during Example construction.
+                # Disable it before the density projection is constructed.
                 options.graph_solve = False
                 os.environ["NOVAPHY_V2_PREWARM_GRAPHS"] = "0"
-                return make_scene(options)
+                return configure_projection(scene, options)
 
-            with patch.object(module, "make_scene", without_graphs):
+            with patch.object(module, "configure_density_projection", without_graphs):
                 example = module.Example(viewer, args)
         else:
             example = module.Example(viewer, args)
-        disable_solver_graphs(example.scene)
+        disable_solver_graphs(example)
         yield example, module, argv
     finally:
         viewer.close()
@@ -196,8 +197,8 @@ def mpm_scene(request, spec, output):
     else:
         os.environ["NOVAPHY_MPM_ACCUMULATION_MODE"] = "accuracy" if deterministic else "normal"
     with _mpm_example(request, spec) as (example, module, argv):
-        scene, config = example.scene, example.scene.config
-        backend = module.advanced_density_cuda if kind == "volume" else module.mpm_backend
+        scene, config = example, example.config
+        backend = module.mpm_backend
         collector = None
         capture = None
         details = dict(deterministic=deterministic, determinism_configurable=True)
@@ -240,7 +241,14 @@ def mpm_scene(request, spec, output):
 
                 capture = Diagnostic(lambda: initial_metadata(scene, rotation), sample_volume, frame=sample_volume)
             if kind == "volume":
-                details["density_projection"] = vars(example.options)
+                details["density_projection"] = {
+                    name: getattr(example.args, name) for name in (
+                        "base_iterations", "outer", "jacobi", "strength", "velocity_gain",
+                        "max_shift", "density_tolerance", "pressure_solver", "relaxation",
+                        "limiter_sweeps", "sort_active", "graph_solve", "defer_projection",
+                        "correction_cutoff",
+                    )
+                }
             if int(scene.model.particle_count) != spec["particles"]:
                 raise ValueError("Native fluid particle count differs from the sealed scene")
             details.update(
