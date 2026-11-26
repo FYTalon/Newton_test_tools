@@ -21,7 +21,7 @@
 | 1-10 流固耦合 V2 | `fluid_grid_mpm_single_box` | MLS-MPM | 1 | 1 |
 | 1-11 TG 涡 | `fluid_grid_taylor_green` | Stable-ACM | 1 | 6 |
 
-求解器名称以运行时使用的清单为准；不同引擎的实现名称见其各自的扩展清单，例如 [NovaPhy 扩展清单](cases/novaphy_extended.json)。
+求解器实现名称和边界类型以各引擎实际运行的场景清单为准。
 
 | 场景 | 模式 | 确定性 | 场景级 graph | 每例每端默认运行 |
 | --- | --- | --- | --- | --- |
@@ -76,7 +76,7 @@ uv run --no-sync newton-test verify runs/newton-smoke
 
 ## 3. 写适配器（adapter）
 
-参评双方都应公开实际用于测试的适配器源码、场景运行参数和标识映射，便于按同一套实现复验。每个引擎的适配器放在 `adapters/<引擎名>/`。本库已提供 Newton 参考端和 WanPhys 参评端的完整适配器。[Newton 适配器](adapters/newton/adapter.py) · [WanPhys 适配器](adapters/wanphys/adapter.py) · [WanPhys 场景配置](adapters/wanphys/scenes.json)
+参评双方都应公开实际用于测试的适配器源码、场景运行参数和标识映射，便于按同一套实现复验。每个引擎的适配器放在 `adapters/<引擎名>/`。现有入口：[Newton](adapters/newton/adapter.py) · [WanPhys](adapters/wanphys/adapter.py) · [NovaPhy](adapters/novaphy/adapter.py)。
 
 Python 适配器实现 `prepare_trial(request, *, output)`，进入上下文时初始化场景并交出一个 `Trial`，退出时释放资源。可复制模板并接入自己的场景工厂。工具的 `worker` 读取请求、导入适配器并运行 `Trial`。[Python 适配器模板](adapters/example/adapter.py)
 
@@ -105,11 +105,7 @@ NEWTON_ADAPTER=".venv/bin/python -m newton_test_tools worker --adapter adapters/
 
 已有独立入口时，可将 `CANDIDATE_ADAPTER` 设为其完整命令，例如 `/path/to/engine/bin/benchmark_adapter`。运行器会追加本次试验的请求和输出参数。先检查适配器的状态和形状映射，再运行完整评测清单。
 
-以 WanPhys 作为参评端时，用已安装 WanPhys 的 Python 环境，将 `--adapter` 指向公开的 `adapters/wanphys/adapter.py`。[WanPhys 运行说明](adapters/wanphys/README.md)
-
-以 NovaPhy 作为参评端时，将候选端命令中的 `worker --adapter` 指向 `adapters/novaphy/adapter.py`。
-该入口覆盖全部 11 个物理场景、12 组测试。常规六例使用 `regular6.json`，其余使用
-`cases/novaphy_extended.json` 如实标注原生求解器实现。[NovaPhy 接入说明](adapters/novaphy/README.md)
+候选端的 Python 环境、适配器入口和场景清单按对应引擎的接入说明配置：[WanPhys](adapters/wanphys/README.md) · [NovaPhy](adapters/novaphy/README.md)。
 
 ```sh
 uv run --no-sync newton-test run --suite cases/regular6.json --case basic_shapes \
@@ -136,7 +132,7 @@ uv run --no-sync newton-test verify runs/regular6
 
 每次指定新的输出目录。可重复传 `--case` 选择多个场景，可用 `--mode accuracy` 或 `--mode performance` 单独运行。默认监测 NVML 物理设备 0，`--gpu` 可传索引或 GPU UUID。Newton 适配器使用 `cuda:0`。有多张卡时，可用 `CUDA_VISIBLE_DEVICES` 让所选 GPU 成为两端进程内的 `cuda:0`。
 
-常规六例默认每轮计时 500 帧，可用 `--performance-frames` 覆盖帧数。使用支持时长计时的适配器时，也可改用 `--duration`。NovaPhy 使用固定帧数协议。
+常规六例默认每轮计时 500 帧，可用 `--performance-frames` 覆盖帧数。使用支持时长计时的适配器时，也可改用 `--duration`；仅支持固定帧数的适配器使用 `--performance-frames`。
 
 输出目录的 `report.md` 汇总结果，`report.json` 保留逐帧误差和性能明细，`run.json` 记录实际测试配置。两端的请求、轨迹、显存采样和日志可在 `cases/<场景>/<模式>/` 下查到。
 
