@@ -145,6 +145,8 @@ def read_team_reports(team_id: str, directories: list[Path]) -> dict[str, Any]:
         pending = []
         if not _formal_protocol(row, "performance", scene_id):
             pending.extend(("performance", "memory"))
+        elif performance.get("gpu_memory_reasons"):
+            pending.append("memory")
         if not _formal_protocol(row, "accuracy", scene_id):
             pending.append("accuracy")
         scene["pending_observations"] = pending
@@ -172,6 +174,8 @@ def read_team_reports(team_id: str, directories: list[Path]) -> dict[str, Any]:
             version_2, "performance", "1-10"
         ):
             coupled["pending_observations"].extend(("performance", "memory"))
+        elif any(row.get("performance", {}).get("gpu_memory_reasons") for row in (version_1, version_2)):
+            coupled["pending_observations"].append("memory")
     for scene_id in set(CASE_SCENES.values()) - scenes.keys():
         scenes[scene_id] = {
             "awaiting_results": True,

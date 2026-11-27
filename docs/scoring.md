@@ -98,6 +98,13 @@ S_physics = mean(S_component)
 
 ### 1-10 流固耦合
 
+For runs with `comparison_version: 4`, the coupled error inputs are computed as follows.
+V1 pressure uses the spatial means on cells with finite pressure in both engines, then divides the sum of absolute mean differences by the sum of absolute Newton means. Frames without common valid cells are excluded.
+V1 cube error averages the relative center error over frames with nonzero Newton displacement from the initial center.
+V2 volume error is the signed mean of `1 - V(t)/V(0)` over 600 frames, where each solver uses its own initial saturated CIC effective volume. Negative mean loss receives full points.
+The trajectory-maximum definitions below describe comparison version 3.
+
+
 | 分量 | 实现 | 满分误差 | 零分误差 | 权重 |
 | --- | --- | ---: | ---: | ---: |
 | 底面压强分布 | V1 | 5% | 100% | 25% |
