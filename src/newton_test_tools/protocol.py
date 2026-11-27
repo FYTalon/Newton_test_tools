@@ -140,6 +140,8 @@ def _check_protocol(mode: str, config: dict[str, Any]) -> None:
     if mode == "accuracy":
         positive_int(config["num_frames"], "num_frames")
         positive_int(config["repetitions"], "repetitions")
+        if "sample_dt_star" in config:
+            positive_number(config["sample_dt_star"], "accuracy.sample_dt_star")
         if config["contact_stage"] not in ("end_of_frame", "end_of_substep"):
             raise ValueError("unknown contact sampling stage")
     elif mode == "performance":

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .diagnostics import Diagnostic, record_samples
+from .diagnostics import Diagnostic, record_samples, tgv_sample_frames
 from .protocol import (
     RESULT_FORMAT,
     TRACE_FORMAT,
@@ -206,7 +206,15 @@ class Monitor:
         count = case["substeps"] if metric_kind(case) == "conservation" else 1
         if (capture.substeps is not None) != (metric_kind(case) == "conservation"):
             raise ValueError("capture cadence differs from the case")
-        record_samples(self.output, capture, frames=frames, substeps=count, step=step, synchronize=self._sync)
+        sample_frames = (
+            tgv_sample_frames(frames, case["frame_dt_seconds"], protocol["sample_dt_star"])
+            if metric_kind(case) == "tgv" and "sample_dt_star" in protocol
+            else None
+        )
+        record_samples(
+            self.output, capture, frames=frames, substeps=count, step=step,
+            synchronize=self._sync, sample_frames=sample_frames,
+        )
         self._metrics = {"completed_frames": frames, "simulation_seconds": frames * case["frame_dt_seconds"]}
 
 
