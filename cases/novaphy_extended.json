@@ -141,8 +141,8 @@
       "metric": "tgv",
       "solver": "lbm_domain",
       "collision": "periodic",
-      "frame_dt_seconds": 0.01,
-      "substeps": 6,
+      "frame_dt_seconds": 0.000980392156862745,
+      "substeps": 1,
       "world_count": 1,
       "paired_passes": true,
       "baseline": {
@@ -151,11 +151,12 @@
       },
       "protocol": {
         "accuracy": {
-          "num_frames": 2000,
+          "num_frames": 20400,
+          "sample_dt_star": 0.01,
           "repetitions": 1
         },
         "performance": {
-          "num_frames": 2000
+          "num_frames": 20400
         }
       }
     }

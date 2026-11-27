@@ -28,6 +28,10 @@ def _formal_protocol(row: dict, mode: str, scene_id: str) -> bool:
     frames = 2000 if scene_id == "1-11" else 600 if scene_id in {"1-9", "1-10"} else 500
     repetitions = 3 if mode == "performance" or scene_id in {"1-4", "1-8"} else 1
     deterministic = mode == "accuracy" and scene_id not in {"1-4", "1-8", "1-9", "1-11"}
+    if scene_id == "1-11" and mode == "accuracy" and "sample_dt_star" in protocol:
+        if protocol["sample_dt_star"] != 0.01:
+            return False
+        frames = 20400
     if (
         protocol.get("num_frames") != frames
         or protocol.get("repetitions") != repetitions

@@ -268,20 +268,40 @@ def compare_box(
     }
 
 
-def compare_tgv(candidate: Path, frames: int, dt: float, spectrum: Path) -> dict[str, Any]:
+def compare_tgv(
+    candidate: Path, frames: int, dt: float, spectrum: Path, *, sample_frames: tuple[int, ...] | None = None
+) -> dict[str, Any]:
     """Compare both curves at the prescribed times before averaging their errors."""
-    energy = np.asarray([float(load_sample(candidate, i)["energy"]) for i in range(frames + 1)])
+    count = frames + 1 if sample_frames is None else len(sample_frames)
+    samples = [load_sample(candidate, i) for i in range(count)]
+    energy = np.asarray([float(sample["energy"]) for sample in samples])
     if not np.isfinite(energy).all():
         raise ValueError("non-finite Taylor–Green energy")
-    times = np.arange(frames) * dt
     reference = np.loadtxt(spectrum, usecols=(0, 1, 2))
     if not np.isfinite(reference).all() or not np.all(np.diff(reference[:, 0]) > 0):
         raise ValueError("invalid Taylor–Green reference curve")
-    if times[0] < reference[0, 0] or times[-1] > reference[-1, 0] + 1e-10:
-        raise ValueError("Taylor–Green reference does not cover the requested frames")
-    dissipation = -np.gradient(energy, dt, edge_order=2 if frames >= 2 else 1)[:-1]
-    expected_energy = np.interp(times, reference[:, 0], reference[:, 1])
-    expected_dissipation = np.interp(times, reference[:, 0], reference[:, 2])
+    edge_order = 2 if count >= 3 else 1
+    if sample_frames is None:
+        times = np.arange(frames) * dt
+        if times[0] < reference[0, 0] or times[-1] > reference[-1, 0] + 1e-10:
+            raise ValueError("Taylor–Green reference does not cover the requested frames")
+        dissipation = -np.gradient(energy, dt, edge_order=edge_order)[:-1]
+        energy = energy[:-1]
+        expected_energy = np.interp(times, reference[:, 0], reference[:, 1])
+        expected_dissipation = np.interp(times, reference[:, 0], reference[:, 2])
+    else:
+        actual = np.asarray([float(sample["t_star"]) for sample in samples])
+        if (
+            not np.isfinite(actual).all()
+            or not np.all(np.diff(actual) > 0)
+            or not np.allclose(actual, np.asarray(sample_frames) * dt, rtol=1e-6, atol=1e-10)
+        ):
+            raise ValueError("Taylor–Green sampling times do not match the selected frames")
+        times, expected_energy, expected_dissipation = reference[reference[:, 0] <= frames * dt + 1e-10].T
+        if not len(times) or actual[0] > times[0] or actual[-1] < times[-1]:
+            raise ValueError("Taylor–Green samples do not cover the requested reference times")
+        dissipation = np.interp(times, actual, -np.gradient(energy, actual, edge_order=edge_order))
+        energy = np.interp(times, actual, energy)
 
     def error(actual: np.ndarray, expected: np.ndarray) -> float:
         norm = float(np.linalg.norm(expected))
@@ -289,7 +309,7 @@ def compare_tgv(candidate: Path, frames: int, dt: float, spectrum: Path) -> dict
             raise ValueError("Taylor–Green reference norm is zero")
         return float(np.linalg.norm(actual - expected)) / norm
 
-    energy_error = error(energy[:-1], expected_energy)
+    energy_error = error(energy, expected_energy)
     dissipation_error = error(dissipation, expected_dissipation)
     return {
         "energy_relative_l2": energy_error,
@@ -304,7 +324,7 @@ def compare_tgv(candidate: Path, frames: int, dt: float, spectrum: Path) -> dict
                 "reference_dissipation": float(ref_d),
             }
             for t, e, d, ref_e, ref_d in zip(
-                times, energy[:-1], dissipation, expected_energy, expected_dissipation, strict=True
+                times, energy, dissipation, expected_energy, expected_dissipation, strict=True
             )
         ],
     }

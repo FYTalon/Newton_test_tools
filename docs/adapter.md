@@ -110,7 +110,7 @@ python -m newton_test_tools worker --adapter /path/adapter.py \
 | `particles` | 模型提供 FP32 `mass`，逐帧样本提供 FP32 `particle_q`、`particle_qd`，粒子顺序与封存参考一致 |
 | `pressure_cube` | 模型提供粒子初态 SHA-256、总质量、诊断网格和压强方法标识及初始质心。逐帧样本含 `frame`、`time_end_s`、32×32 `floor_pressure_pa`（干格为 NaN）和 `cube_center_m`。使用 `coupled_summary` 的清单还需同网格的 `floor_contact_impulse_ns` 与 `floor_boundary_correction_impulse_ns`。Newton 端同时输出体积字段 |
 | `volume` | 模型提供同样的粒子初态、质量与诊断网格元数据及体积方法标识。逐帧样本含 `frame`、`time_end_s`、`volume_ratio`、`initial_effective_volume_m3` 和 `nonfinite_count` |
-| `tgv` | 初态与帧末提供参考单位下的标量 `energy`，另外记录求解配置。参考谱随运行副本保存 |
+| `tgv` | 默认在初态及各帧末提供标量 `energy`；若指定 `accuracy.sample_dt_star`，则在初态、选中的最近帧和终态提供 `energy` 及实际无量纲时刻 `t_star`。参考谱随运行副本保存 |
 
 `pressure_cube` 和 `volume` 的参考请求使用同一个场景 ID。由 Newton 写出 `initial_snapshot.npz` 后，运行器把同轮快照的路径作为 `reference_snapshot` 传给 MLS-MPM。
 
@@ -122,4 +122,4 @@ python -m newton_test_tools worker --adapter /path/adapter.py \
 
 每端的 `events.jsonl` 按 world 和无序形状对记录连续的有效接触事件。起点取首次接触前的状态，终点取该对首次失去接触后的状态，记录全场动量、质心角动量和机械能的变化及事件内的穿透和负法向力峰值。持续到轨迹结束的事件仅记录起点及接触统计。
 
-TG 涡按 `t*=0,0.01,…,19.99` 对齐已有谱参考。由模拟动能曲线差分求耗散率，首点用前向差分、其余时刻用中心差分，参考耗散率取谱文件第三列。先算两个相对 L2 误差，再取算术平均。公开工具的 `verify` 从记录复算这些指标。
+TG 涡按 `t*=0,0.01,…,19.99` 对齐已有谱参考。先在实际采样时刻对模拟动能做差分，内部点使用中心差分，端点使用单边差分；再将两条模拟曲线插值到参考时刻。参考耗散率取谱文件第三列。分别计算相对 L2 误差，再取算术平均。公开工具的 `verify` 从记录复算这些指标。

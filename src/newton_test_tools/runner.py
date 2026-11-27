@@ -14,6 +14,7 @@ from typing import Any
 
 from .accuracy import compare_accuracy
 from .conservation import compare_conservation, summarize_conservation_trials
+from .diagnostics import tgv_sample_frames
 from .extended_accuracy import SPECTRUM, compare_box, compare_particles, compare_tgv
 from .gpu import sample_gpu_memory, select_timed_memory
 from .monitor import performance_metrics
@@ -151,7 +152,16 @@ def _read_diagnostic_accuracy(
     kind = metric_kind(case)
     frames, repetitions = protocol["num_frames"], protocol["repetitions"]
     sides = {}
-    expected = frames * (case["substeps"] if kind == "conservation" else 1) + 1
+    dt = case["frame_dt_seconds"]
+    sample_frames = (
+        tgv_sample_frames(frames, dt, protocol["sample_dt_star"])
+        if kind == "tgv" and "sample_dt_star" in protocol
+        else None
+    )
+    expected = (
+        len(sample_frames) if sample_frames is not None
+        else frames * (case["substeps"] if kind == "conservation" else 1) + 1
+    )
     gpu_seen = None
     for role in _roles(case):
         runs = []
@@ -173,7 +183,6 @@ def _read_diagnostic_accuracy(
                 raise ValueError(f"engine or runtime changed between {kind} accuracy trials in {directory}")
             runs.append(report)
         sides[role] = runs
-    dt = case["frame_dt_seconds"]
     coupled = case.get("coupled_summary", False)
     full_conservation = kind == "conservation" and case.get("energy_scope") == "full_trajectory"
     count = repetitions if case.get("paired_passes") or coupled or full_conservation else 1
@@ -182,7 +191,7 @@ def _read_diagnostic_accuracy(
         candidate = _trial_directory(root, case, "accuracy", "candidate", number, repetitions)
         if kind == "tgv":
             spectrum = _mode_directory(root, case, "accuracy") / "spectrum.gdiag"
-            results.append(compare_tgv(candidate, frames, dt, spectrum))
+            results.append(compare_tgv(candidate, frames, dt, spectrum, sample_frames=sample_frames))
             continue
         reference = _trial_directory(root, case, "accuracy", "reference", number, repetitions)
         if kind == "conservation":
@@ -398,7 +407,13 @@ def _markdown(report: dict[str, Any]) -> str:
     uniform = all(row.get("protocol", {}) == protocols for row in report["cases"])
     if uniform and "accuracy" in first:
         accuracy = protocols.get("accuracy", report["protocol"]["accuracy"])
-        lines.append(f"精度每端采集 {accuracy['num_frames']} 帧，独立运行 {accuracy['repetitions']} 次。")
+        if "sample_dt_star" in accuracy:
+            lines.append(
+                f"精度每端推进 {accuracy['num_frames']} 帧，按无量纲间隔 "
+                f"{accuracy['sample_dt_star']:g} 选择采样帧，独立运行 {accuracy['repetitions']} 次。"
+            )
+        else:
+            lines.append(f"精度每端采集 {accuracy['num_frames']} 帧，独立运行 {accuracy['repetitions']} 次。")
     if uniform and "performance" in first:
         performance = protocols.get("performance", report["protocol"]["performance"])
         trials = performance.get("repetitions", 1)

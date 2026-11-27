@@ -272,6 +272,10 @@ class TGVScene:
         self.state, self.out = self.model.state(), self.model.state()
         self.case, self.frames = case, 0
 
+    @property
+    def t_star(self):
+        return self.frames * self.case["substeps"] * self.solver.internal_dt / self.meta["turnover_time_s"]
+
     def step(self):
         self.solver.step(self.state, self.out, None, None, self.case["substeps"] * self.solver.internal_dt)
         if self.solver.last_substeps != self.case["substeps"]:
@@ -294,16 +298,18 @@ def prepare_trial(request, *, spec, output):
     kind, accuracy = spec["metric"], request["mode"] == "accuracy"
     if case.get("metric") != kind or case["world_count"] != 1 or protocol["graph"]:
         raise ValueError("Native fluid trials require the sealed metric, one world and scene graph OFF")
-    dt = 0.01 if kind == "tgv" else 1 / 60
-    expected_substeps = 6 if kind == "tgv" else 2 if kind == "particles" else 1
-    if case["substeps"] != expected_substeps or not math.isclose(case["frame_dt_seconds"], dt, abs_tol=1e-12):
+    expected_substeps = 2 if kind == "particles" else 1
+    if kind != "tgv" and (
+        case["substeps"] != expected_substeps
+        or not math.isclose(case["frame_dt_seconds"], 1 / 60, abs_tol=1e-12)
+    ):
         raise ValueError("Native fluid frame interval or substep count differs from the suite")
     if kind == "tgv":
         if protocol["deterministic"]:
             raise ValueError("Native TGV uses ordinary LBM mode")
         scene = TGVScene(spec, case)
         def sample():
-            return {"energy": scene.energy()}
+            return {"energy": scene.energy(), "t_star": scene.t_star}
         capture = Diagnostic(lambda: dict(grid_size=spec["cells"], reynolds=spec["reynolds"]), sample, frame=sample)
         info = dict(
             deterministic=False, native_internal_dt=float(scene.solver.internal_dt), scene_settings=scene.meta,

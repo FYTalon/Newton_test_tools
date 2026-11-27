@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,17 @@ class Diagnostic:
     substeps: Callable[[Callable[[Sample], None]], ContextManager[None]] | None = None
 
 
+def tgv_sample_frames(frames: int, frame_dt: float, sample_dt: float) -> tuple[int, ...]:
+    if sample_dt <= frame_dt:
+        return tuple(range(frames + 1))
+    m = math.ceil(frames * frame_dt / sample_dt)
+    targets = {min(frames, round(i * sample_dt / frame_dt)) for i in range(m)}
+    targets.update((0, frames))
+    if frames >= 2 and len(targets) == 2:
+        targets.add(frames // 2)
+    return tuple(sorted(targets))
+
+
 def record_samples(
     output: Path,
     capture: Diagnostic,
@@ -30,9 +42,12 @@ def record_samples(
     substeps: int,
     step: Callable[[], None],
     synchronize: Callable[[], None] | None,
+    sample_frames: tuple[int, ...] | None = None,
 ) -> None:
     if (capture.frame is None) == (capture.substeps is None):
         raise ValueError("a diagnostic must provide exactly one frame reader or substep observer")
+    if sample_frames is not None and capture.substeps is not None:
+        raise ValueError("selected frames require a frame reader")
     directory = output / "samples"
     directory.mkdir()
     if synchronize is not None:
@@ -54,8 +69,11 @@ def record_samples(
                     raise ValueError(f"expected {substeps} completed substeps in frame {frame}")
     else:
         assert capture.frame is not None
-        for _ in range(frames):
+        selected = frozenset(sample_frames) if sample_frames is not None else None
+        for frame in range(1, frames + 1):
             step()
+            if selected is not None and frame not in selected:
+                continue
             if synchronize is not None:
                 synchronize()
             record(capture.frame())
