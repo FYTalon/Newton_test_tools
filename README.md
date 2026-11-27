@@ -163,12 +163,12 @@ uv run --no-sync newton-test verify runs/coupled-mpm
 | `basic_shapes_100k` | 500 帧 × 5 子步，3 次 | 全程最大归一化总线动量变化和机械能偏差、实际穿透点平均深度、负法向力峰值及自由度；各端三次指标取均值后计算比值 |
 | `anymal_c_walk_100k` | 500 帧 × 4 子步，3 次 | 同样四项全程指标，各端三次指标取均值后计算比值 |
 | `implicit_mpm_dam_break` | 初态及 600 帧，1 次 | `x_F` 取逐粒子、逐帧的位置与线速度归一化 L2 误差最大值 |
-| `implicit_mpm_water_dam_single_box` | 600 帧，1 次 | 32×32 底面压强分布归一化误差和立方体质心运动误差的全轨迹最大值 |
-| `fluid_grid_mpm_single_box` | 600 帧，1 次 | 相对初始 CIC 有效体积的最大损失比例 |
+| `implicit_mpm_water_dam_single_box` | 600 帧，1 次 | 共同有效格的底面平均压强累计归一化误差，以及立方体质心有效帧平均相对误差 |
+| `fluid_grid_mpm_single_box` | 600 帧，1 次 | 相对初始 CIC 有效体积的逐帧有符号损失均值 |
 | `fluid_grid_taylor_green` | 初态及 2000 帧，1 次 | 动能和耗散率相对 L2 误差，再对两者等权平均 |
 
 扩展套件默认每组性能测三次，十万自由度场景每次计时 500 帧，溃坝和流固耦合计时 600 帧，TG 涡计时 2000 帧。性能采用同步墙钟计时。十万自由度场景关闭确定性，精度关闭 graph，性能开启 graph。
 
 两个十万自由度场景精度运行三次，各端指标取均值后计算比值；其余场景精度运行一次。纯溃坝和 TG 涡关闭确定性；流固耦合开启确定性。性能关闭确定性，从初态启动三次独立计时试次；逐帧读取和落盘在精度试次内完成。流固耦合两种实现共用 Newton 参考，各版本分别汇总三次 FPS 和三次峰值显存，再对两个版本的汇总值取算术平均，与 Newton 比较。TG 涡可单独运行，FPS 比与显存比分母分别为 30 FPS 和 6144 MiB。
 
-在 `cases/extended.json` 的纯溃坝条目中，可分别设置 `particle_error_scales.position_m` 和 `particle_error_scales.linear_velocity_mps`。省略时，两项分别按 m 和 m/s 取场景最短边对应的数值，当前为 1。报告保留本次完整精度轨迹和每次性能测量。扩展精度数据格式见[适配器协议](docs/adapter.md#扩展场景采集)。
+在 `cases/extended.json` 的纯溃坝条目中，可分别设置 `particle_error_scales.position_m` 和 `particle_error_scales.linear_velocity_mps`。省略时，两项分别按 m 和 m/s 取场景最短边对应的数值，当前为 1。报告保留本次完整精度轨迹和每次性能测量。粒子有显式 ID 时按 ID 对齐。两端均无 ID 时，仅在案例显式配置 implicit_particle_row_ids 后按行比较。扩展精度数据格式见[适配器协议](docs/adapter.md#扩展场景采集)。

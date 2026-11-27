@@ -111,7 +111,10 @@ def _accuracy(scene: dict, task: dict, scene_id: str, rules: dict) -> dict:
         return _observation(value, points, curves["tgv"])
     components = {}
     for field, specification in rules["coupled"]["components"].items():
-        value = _number(accuracy.get(field))
+        raw = accuracy.get(field)
+        if field == "volume_loss_error" and type(raw) in (int, float) and math.isfinite(raw):
+            raw = max(0.0, raw)
+        value = _number(raw)
         anchors = [[specification["full_score_error"], 100], [1.0, 0]]
         components[field] = {**_observation(value, points, anchors), "weight": specification["weight"]}
     complete = all(component["status"] == "ok" for component in components.values())

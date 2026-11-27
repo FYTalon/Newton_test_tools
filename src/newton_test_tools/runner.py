@@ -147,6 +147,7 @@ def _read_diagnostic_accuracy(
     *,
     save_event_details: bool = False,
     scoring_metrics: bool = False,
+    aligned_metrics: bool = False,
 ) -> dict[str, Any]:
     kind = metric_kind(case)
     frames, repetitions = protocol["num_frames"], protocol["repetitions"]
@@ -188,7 +189,11 @@ def _read_diagnostic_accuracy(
         if kind == "conservation":
             result = compare_conservation(candidate, reference, case, frames, save_event_details=save_event_details)
         elif kind == "particles":
-            result = compare_particles(candidate, reference, frames, scales=particle_error_scales(case))
+            result = compare_particles(
+                candidate, reference, frames, scales=particle_error_scales(case),
+                implicit_rows=not aligned_metrics or case.get("implicit_particle_row_ids", False),
+                aligned_metrics=aligned_metrics,
+            )
         else:
             result = compare_box(
                 candidate,
@@ -198,6 +203,7 @@ def _read_diagnostic_accuracy(
                 volume=kind == "volume",
                 pressure_grid=coupled,
                 scoring_metrics=scoring_metrics and coupled,
+                aligned_metrics=aligned_metrics and coupled,
             )
         results.append(result)
     summary = 0
@@ -218,8 +224,12 @@ def _read_performance_trial(directory: Path, case: dict[str, Any], protocol: dic
         {"case": case, "protocol": protocol}, counters["timed_frames"], counters["elapsed_seconds"]
     )
     memory = read_json(directory / "gpu-memory.json")
-    positive_int(memory["peak_bytes"], "peak_bytes")
-    positive_int(memory["sample_count"], "sample_count")
+    if memory.get("scope") == "unavailable":
+        if memory["peak_bytes"] is not None or memory["sample_count"] != 0:
+            raise ValueError("invalid unavailable GPU memory record")
+    else:
+        positive_int(memory["peak_bytes"], "peak_bytes")
+        positive_int(memory["sample_count"], "sample_count")
     if memory["sample_interval_ms"] != protocol["memory_sample_interval_ms"]:
         raise ValueError("GPU memory polling interval differs from the requested interval")
     for field in _PHYSICAL_COUNTS:
@@ -227,7 +237,7 @@ def _read_performance_trial(directory: Path, case: dict[str, Any], protocol: dic
     return {**report, "metrics": metrics, "gpu_memory": memory}
 
 
-def _performance_means(side: dict[str, Any]) -> tuple[float, float]:
+def _performance_means(side: dict[str, Any]) -> tuple[float, float | None]:
     if "mean" in side:
         return side["mean"]["fps"], side["mean"]["gpu_peak_bytes"]
     return side["metrics"]["fps"], side["gpu_memory"]["peak_bytes"]
@@ -263,7 +273,9 @@ def _read_performance(
             label = role if repetitions == 1 else f"{role} trial {i}"
             if runtime["device_uuid"] != memory["device_uuid"]:
                 reasons.append(f"{label} used a different GPU from the one monitored")
-            if require_timed_memory and memory.get("scope") != "timed":
+            if memory.get("scope") == "unavailable":
+                memory_reasons.append(f"{label} has no NVML process memory samples")
+            elif require_timed_memory and memory.get("scope") != "timed":
                 memory_reasons.append(f"{label} has no GPU memory samples inside the timed window")
             if runtime["model_counts"]["world_count"] != case["world_count"]:
                 reasons.append(f"{label} model world count differs from the case")
@@ -280,7 +292,8 @@ def _read_performance(
         if repetitions == 1:
             sides[role] = first
         else:
-            mean = {"gpu_peak_bytes": fmean(trial["gpu_memory"]["peak_bytes"] for trial in trials)}
+            peaks = [trial["gpu_memory"]["peak_bytes"] for trial in trials]
+            mean = {"gpu_peak_bytes": fmean(peaks) if all(peak is not None for peak in peaks) else None}
             if legacy_frame_summary:
                 elapsed = fmean(trial["metrics"]["elapsed_seconds"] for trial in trials)
                 mean.update(elapsed_seconds=elapsed, fps=protocol["num_frames"] / elapsed)
@@ -320,7 +333,7 @@ def _read_performance(
         "fps_ratio": None if reasons else candidate_fps / reference_fps,
         "gpu_peak_ratio": None if reasons or memory_reasons else candidate_peak / reference_peak,
         "reasons": reasons,
-        **({"gpu_memory_reasons": memory_reasons} if require_timed_memory else {}),
+        **({"gpu_memory_reasons": memory_reasons} if require_timed_memory or memory_reasons else {}),
     }
 
 
@@ -348,7 +361,8 @@ def _read_comparison(
                 row[mode] = _read_accuracy(_mode_directory(root, case, mode), case, protocol)
             else:
                 row[mode] = _read_diagnostic_accuracy(
-                    root, case, protocol, save_event_details=save_event_details, scoring_metrics=scoring_metrics
+                    root, case, protocol, save_event_details=save_event_details, scoring_metrics=scoring_metrics,
+                    aligned_metrics=plan.get("comparison_version", 1) >= 4,
                 )
         rows.append(row)
     by_case = {row["case"]: row for row in rows}
@@ -368,7 +382,8 @@ def _read_comparison(
             "fps_ratio": None if any(version["reasons"] for version in versions) else fps / reference_fps,
         }
         if scoring_metrics:
-            candidate_peak = fmean(_performance_means(version["engines"]["candidate"])[1] for version in versions)
+            peaks = [_performance_means(version["engines"]["candidate"])[1] for version in versions]
+            candidate_peak = fmean(peaks) if all(peak is not None for peak in peaks) else None
             _, reference_peak = _performance_means(versions[0]["engines"]["reference"])
             memory_invalid = any(version["reasons"] or version.get("gpu_memory_reasons") for version in versions)
             second["coupled_performance"].update(
@@ -444,8 +459,8 @@ def _markdown(report: dict[str, Any]) -> str:
                     number(a_fps),
                     number(b_fps),
                     number(performance["fps_ratio"]),
-                    number(a_peak / 1024**2),
-                    number(b_peak / 1024**2),
+                    number(a_peak / 1024**2 if a_peak is not None else None),
+                    number(b_peak / 1024**2 if b_peak is not None else None),
                     number(performance["gpu_peak_ratio"]),
                 ]
             )
@@ -530,7 +545,9 @@ def _run_adapter(command: list[str], request: dict[str, Any], directory: Path, t
         raise RuntimeError(f"adapter exited with code {code}; see {log}")
     if memory is not None:
         if memory["sample_count"] == 0 or memory["peak_bytes"] <= 0:
-            raise RuntimeError(f"NVML did not observe GPU memory for the adapter process; see {log}")
+            memory.update(scope="unavailable", peak_bytes=None)
+            write_json(directory / "gpu-memory.json", memory)
+            return
         metrics = read_json(directory / "report.json")["metrics"]
         write_json(directory / "gpu-memory.json", select_timed_memory(memory, metrics.get("timing_window")))
 
@@ -540,7 +557,7 @@ def run(output: Path, plan: dict[str, Any], commands: dict[str, list[str]], gpu:
 
     output = output.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=False)
-    plan = {**plan, "comparison_version": 3}
+    plan = {**plan, "comparison_version": 4}
     write_json(output / "run.json", {**plan, "commands": commands, "gpu": gpu})
     references: dict[tuple[str, str], tuple[dict[str, Any], dict[str, Any]]] = {}
     for case in plan["cases"]:
