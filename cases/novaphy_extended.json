@@ -66,6 +66,7 @@
     },
     {
       "id": "implicit_mpm_dam_break",
+      "implicit_particle_row_ids": true,
       "metric": "particles",
       "solver": "implicit_mpm",
       "collision": "particle_boundary",
