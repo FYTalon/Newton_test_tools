@@ -91,7 +91,7 @@ python -m newton_test_tools worker --adapter /path/adapter.py \
 
 工具用 `protocol.warmup_frames` 预热，先同步设备再开始单次连续墙钟计时，之后每满 `sync_interval_frames` 帧同步一次。性能请求用 `duration_seconds` 指定目标时长，或用 `num_frames` 指定准确的计时帧数。固定帧数模式在最后一批同步后结束，尾批可少于同步间隔。预热沿用 example 的正常步进。计时段关闭渲染、逐帧接触和状态导出。性能报告的 `metrics.timed_frames` 和 `metrics.elapsed_seconds` 是原始计数，由运行器复算 FPS。RTF 定义为墙钟时间 / 仿真时间，作为补充信息。
 
-运行器另写 `gpu-memory.json`，记录对应 GPU UUID、驱动、字节峰值、有效采样数、间隔和采样序列。使用 `Monitor.measure` 时，采样窗口由预热后的 GPU 同步与最后一帧后的 GPU 同步确定，计入正式运行期间仍驻留的初始化分配和缓存。缺少计时窗口或窗口内无采样点时，以 `scope: process` 保留全进程观测。正式清单开启 `require_timed_memory`，使用正式窗口的采样计算显存比，全进程观测只供诊断。NVML 查询间隔之间的瞬时分配可能没被捕获。若设备或场景规模核对失败，保留单端原始值，配对比值为空并给出原因。
+运行器另写 `gpu-memory.json`，记录对应 GPU UUID、驱动、字节峰值、有效采样数、间隔和采样序列。使用 `Monitor.measure` 时，采样窗口由预热后的 GPU 同步与最后一帧后的 GPU 同步确定，计入正式运行期间仍驻留的初始化分配和缓存。缺少计时窗口或窗口内无采样点时，以 `scope: process` 保留全进程观测。正式清单开启 `require_timed_memory`，使用正式窗口的采样计算显存比，全进程观测只供诊断。NVML 无有效进程显存样本时记录为 `scope: unavailable` 和空峰值，保留计时结果并将显存评分标记为待补。NVML 查询间隔之间的瞬时分配可能没被捕获。若设备或场景规模核对失败，保留单端原始值，配对比值为空并给出原因。
 
 性能重复次数由 `protocol.repetitions` 指定，适配器每次启动执行一次计时。常规六例每端默认 3 次，每次计时 500 帧。每次的报告和 NVML 峰值保存在 `run-N`，汇总 JSON 的 `trials` 保留各次原始值，`mean` 中的 FPS 为各轮总帧数除以总耗时，显存为各轮峰值的算术平均。FPS 比和显存比用候选端与参考端对应结果相除。旧清单省略重复次数时按一次处理。
 

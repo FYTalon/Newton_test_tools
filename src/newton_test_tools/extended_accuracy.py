@@ -13,13 +13,23 @@ from .diagnostics import Sample, load_sample
 SPECTRUM: Path = Path(__file__).with_name("data") / "spectral_Re1600_512.gdiag"
 
 
-def _particle_state(folder: Path, index: int, count: int) -> tuple[np.ndarray, np.ndarray]:
+def _particle_state(folder: Path, index: int, count: int, implicit_rows: bool) -> tuple[np.ndarray, np.ndarray, bool]:
     sample = load_sample(folder, index)
     positions, velocities = sample["particle_q"], sample["particle_qd"]
     for array in (positions, velocities):
         if array.dtype != np.float32 or array.shape != (count, 3) or not np.isfinite(array).all():
             raise ValueError(f"invalid FP32 particle state at {folder}, frame {index}")
-    return positions, velocities
+    if "id" not in sample:
+        if not implicit_rows:
+            raise ValueError(f"explicit particle IDs required at {folder}, frame {index}")
+        return positions, velocities, False
+    ids = sample["id"]
+    if ids.shape != (count,) or ids.dtype.kind not in "iu":
+        raise ValueError(f"invalid particle IDs at {folder}, frame {index}")
+    order = np.argsort(ids, kind="stable")
+    if not np.array_equal(ids[order], np.arange(count)):
+        raise ValueError(f"particle IDs must cover 0..N-1 exactly once at {folder}, frame {index}")
+    return positions[order], velocities[order], True
 
 
 def _relative_rms(actual: np.ndarray, expected: np.ndarray, weights: np.ndarray) -> tuple[float, float | None]:
@@ -31,7 +41,7 @@ def _relative_rms(actual: np.ndarray, expected: np.ndarray, weights: np.ndarray)
 
 
 def compare_particles(
-    candidate: Path, reference: Path, frames: int, *, scales: dict[str, float] | None = None
+    candidate: Path, reference: Path, frames: int, *, scales: dict[str, float] | None = None, implicit_rows: bool = False, aligned_metrics: bool = True
 ) -> dict[str, Any]:
     """Compare every FP32 particle position and velocity at matching frames."""
     mass = load_sample(reference)["mass"]
@@ -40,8 +50,10 @@ def compare_particles(
     if not np.array_equal(load_sample(candidate)["mass"], mass):
         raise ValueError("particle masses differ")
     weights = mass / np.sum(mass, dtype=np.float32)
-    initial, initial_v = _particle_state(reference, 0, len(mass))
-    actual_initial, actual_initial_v = _particle_state(candidate, 0, len(mass))
+    initial, initial_v, explicit_ids = _particle_state(reference, 0, len(mass), implicit_rows)
+    actual_initial, actual_initial_v, candidate_ids = _particle_state(candidate, 0, len(mass), implicit_rows)
+    if candidate_ids != explicit_ids:
+        raise ValueError("particle ID availability differs between engines")
     if not np.array_equal(initial, actual_initial) or not np.array_equal(initial_v, actual_initial_v):
         raise ValueError("initial particle state differs")
     maximum, unequal = (
@@ -52,13 +64,19 @@ def compare_particles(
     vector_fields = {"particle_q": ("x_p", "position_m"), "particle_qd": ("x_v", "linear_velocity_mps")}
     peaks: dict[str, dict[str, Any]] = {}
     rows = []
+    worst_location = {}
     for index in range(frames + 1):
-        pos, vel = _particle_state(candidate, index, len(mass))
-        ref_pos, ref_vel = _particle_state(reference, index, len(mass))
+        pos, vel, candidate_ids = _particle_state(candidate, index, len(mass), implicit_rows)
+        ref_pos, ref_vel, reference_ids = _particle_state(reference, index, len(mass), implicit_rows)
+        if candidate_ids != explicit_ids or reference_ids != explicit_ids:
+            raise ValueError(f"particle ID availability changed at frame {index}")
         row: dict[str, Any] = {"frame": index}
         for name, info in (("particle_q", (pos, ref_pos)), ("particle_qd", (vel, ref_vel))):
             delta = np.abs(info[0] - info[1])
             value, count = float(delta.max()), int(np.count_nonzero(delta))
+            if aligned_metrics and (index == 0 or value > maximum[name]):
+                particle_id, component = divmod(int(np.argmax(delta)), 3)
+                worst_location[name] = {"frame": index, "particle_id": particle_id, "component": "xyz"[component]}
             maximum[name] = max(maximum[name], value)
             unequal[name] += count
             row[name] = {"max_abs": value, "unequal_components": count}
@@ -78,6 +96,8 @@ def compare_particles(
             ("linear_velocity", vel, ref_vel),
         ):
             absolute, relative = _relative_rms(a, b, weights)
+            if aligned_metrics and index == 0 and absolute == 0 and relative is None:
+                relative = 0.0
             row[name] = {"absolute_rms": absolute, "relative_rms": relative}
             if relative is not None:
                 rms_max[name] = max(rms_max[name], relative)
@@ -88,6 +108,7 @@ def compare_particles(
         normalized = {**errors, "x_F": max(errors.values()), "scales": scales, "peak_samples": peaks}
     return {
         **normalized,
+        **({"worst_location": worst_location, "particle_alignment": "id" if explicit_ids else "row"} if aligned_metrics else {}),
         "particles": len(mass),
         "frames_inclusive": [0, frames],
         "worst_max_abs": maximum,
@@ -118,6 +139,7 @@ def compare_box(
     volume: bool,
     pressure_grid: bool = False,
     scoring_metrics: bool = False,
+    aligned_metrics: bool = False,
 ) -> dict[str, Any]:
     a_model, b_model = load_sample(candidate), load_sample(reference)
     _checked_metadata(a_model, b_model)
@@ -174,7 +196,11 @@ def compare_box(
                 a_pressure, b_pressure = a["floor_pressure_pa"], b["floor_pressure_pa"]
                 a_wet, b_wet = np.isfinite(a_pressure), np.isfinite(b_pressure)
                 common = a_wet & b_wet
-                if scoring_metrics:
+                if aligned_metrics:
+                    pressures = [float(grid[common].mean()) for grid in (a_pressure, b_pressure)] if common.any() else [None, None]
+                    pressure_error = abs(pressures[0] - pressures[1]) if common.any() else 0.0
+                    reference_pressure = abs(pressures[1]) if common.any() else 0.0
+                elif scoring_metrics:
                     actual_pressure = np.nan_to_num(a_pressure, nan=0.0)
                     expected_pressure = np.nan_to_num(b_pressure, nan=0.0)
                     pressure_error = float(np.abs(actual_pressure - expected_pressure).sum())
@@ -201,12 +227,12 @@ def compare_box(
             row.update(
                 mean_pressure_W_pa=pressures[0],
                 mean_pressure_N_pa=pressures[1],
-                absolute_pressure_error_pa=abs(pressures[0] - pressures[1]),
+                absolute_pressure_error_pa=abs(pressures[0] - pressures[1]) if pressures[0] is not None else None,
                 cube_center_error_m=absolute,
                 cube_relative_error=absolute / displacement
                 if displacement > 1e-12
                 else 0.0
-                if scoring_metrics and absolute == 0
+                if scoring_metrics and not aligned_metrics and absolute == 0
                 else None,
             )
         rows.append(row)
@@ -222,7 +248,7 @@ def compare_box(
             "max_abs_ratio_difference": max(differences),
             **(
                 {
-                    "volume_loss_error": max(max(0.0, 1.0 - row["volume_ratio_W"]) for row in rows),
+                    "volume_loss_error": 1.0 - a_mean if aligned_metrics else max(max(0.0, 1.0 - row["volume_ratio_W"]) for row in rows),
                     "reference_volume_loss_max": max(max(0.0, 1.0 - row["volume_ratio_N"]) for row in rows),
                 }
                 if scoring_metrics
@@ -230,9 +256,10 @@ def compare_box(
             ),
             "frames": rows,
         }
-    denominator = math.fsum(abs(row["mean_pressure_N_pa"]) for row in rows)
+    valid_pressure = [row for row in rows if row["mean_pressure_N_pa"] is not None]
+    denominator = math.fsum(abs(row["mean_pressure_N_pa"]) for row in valid_pressure)
     old_pressure_error = (
-        math.fsum(row["absolute_pressure_error_pa"] for row in rows) / denominator if denominator > 0 else None
+        math.fsum(row["absolute_pressure_error_pa"] for row in valid_pressure) / denominator if denominator > 0 else None
     )
     pressure_result = {"floor_pressure_relative_error": old_pressure_error}
     if pressure_grid:
@@ -246,6 +273,16 @@ def compare_box(
             else "relative_l1_common_wet_cells",
         }
     relative = [row["cube_relative_error"] for row in rows if row["cube_relative_error"] is not None]
+    if aligned_metrics:
+        return {
+            "pressure_error": old_pressure_error,
+            "cube_state_error": math.fsum(relative) / len(relative) if relative else None,
+            "floor_pressure_relative_error": old_pressure_error,
+            "cube_center_mean_relative_error": math.fsum(relative) / len(relative) if relative else None,
+            "pressure_valid_frames": len(valid_pressure),
+            "cube_valid_frames": len(relative),
+            "frames": rows,
+        }
     return {
         **pressure_result,
         "cube_center_mean_relative_error": math.fsum(relative) / len(relative) if relative else None,
